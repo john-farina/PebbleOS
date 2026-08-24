@@ -78,3 +78,19 @@ Others:
 
 - If fixing Linear or GitHub issues, include in the commit body a line with
   `Fixes XXX`, where XXX is the issue number.
+
+<!-- ===== fork-local (john-farina); keep at end of file for easy rebase ===== -->
+
+## Simulator (fork-local)
+
+This checkout has a working simulator. Use the `pebble-sim` skill whenever the
+task involves running PebbleOS, checking how something looks, or iterating on
+UI — it documents the `./sim` wrapper, which sources the PebbleOS SDK and
+`.venv` for you and handles QEMU process cleanup.
+
+Short version: `./sim boot` (never pipe it), `./sim rebuild`, `./sim shot`,
+`./sim key back|select|up|down`. Default board is `qemu_emery` — the Pebble
+Time 2 platform at its real 200x228 geometry.
+
+Verify visual changes yourself by taking a screenshot and reading the PNG.
+Do not ask the user to look at the emulator window.
