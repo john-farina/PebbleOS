@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Simulator wrapper for PebbleOS under QEMU.
+#
+# Handles the env activation (PebbleOS SDK + .venv), stale-process cleanup, and
+# the socket-monitor plumbing that ./pbl leaves to the caller. Intended as the
+# single entrypoint for both humans and agents.
+#
+#   ./sim boot [board]     ./sim shot [path]     ./sim key back
+#   ./sim rebuild          ./sim tap 100 114     ./sim swipe 100 200 100 40
+#   ./sim stop             ./sim logs            ./sim app foo.pbw
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MON="$REPO/build/qemu-mon.sock"
+DEFAULT_BOARD=qemu_emery
+
+die() { echo "sim: $*" >&2; exit 1; }
+
+activate() {
+  local sdk
+  sdk="$(ls -d "$HOME"/pebbleos-sdk-* 2>/dev/null | sort -V | tail -1)" \
+    || die "no PebbleOS SDK found in \$HOME (see docs/development/getting_started.md)"
+  [ -n "$sdk" ] || die "no PebbleOS SDK found in \$HOME"
+  # shellcheck disable=SC1090,SC1091
+  source "$sdk/env.sh" >/dev/null
+  [ -f "$REPO/.venv/bin/activate" ] || die "missing .venv -- python3 -m venv .venv && pip install -r requirements.txt"
+  source "$REPO/.venv/bin/activate"
+}
+
+configured_board() {
+  sed -n "s/^BOARD *= *'\(.*\)'.*/\1/p" "$REPO/build/c4che/_cache.py" 2>/dev/null | head -1
+}
+
+running() { pgrep -f qemu-pebble >/dev/null 2>&1; }
+
+# Speak QEMU's human monitor protocol over the unix socket. ./pbl exposes the
+# socket but has no sendkey command of its own.
+monitor() {
+  running || die "QEMU is not running -- ./sim boot"
+  [ -S "$MON" ] || die "monitor socket missing at $MON -- ./sim boot"
+  MON_SOCK="$MON" python3 - "$@" <<'PY'
+import os, socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(os.environ["MON_SOCK"])
+s.settimeout(2.0)
+time.sleep(0.3)
+try: s.recv(65536)
+except Exception: pass
+for cmd in sys.argv[1:]:
+    s.sendall((cmd + "\n").encode())
+    time.sleep(0.4)
+    try: s.recv(65536)
+    except Exception: pass
+PY
+}
+
+cmd_stop() {
+  pkill -f qemu-pebble 2>/dev/null || true
+  pkill -f "pbl qemu" 2>/dev/null || true
+  sleep 1
+  rm -f "$MON" "$REPO/build/qmp.sock"
+  echo "sim: stopped"
+}
+
+cmd_boot() {
+  local board="${1:-}"
+  # Ports 12344/12345 are hardcoded in ./pbl, so a stale instance silently
+  # breaks the next launch. Always clear first.
+  running && cmd_stop
+  activate
+  local have; have="$(configured_board)"
+  if [ -n "$board" ] && [ "$board" != "$have" ]; then
+    ( cd "$REPO" && ./pbl configure --board="$board" )
+    have="$board"
+  elif [ -z "$have" ]; then
+    ( cd "$REPO" && ./pbl configure --board="$DEFAULT_BOARD" )
+    have="$DEFAULT_BOARD"
+  fi
+  [ -f "$REPO/build/pebbleos.elf" ] || ( cd "$REPO" && ./pbl build )
+  ( cd "$REPO" && nohup ./pbl qemu >"$REPO/build/qemu-launch.log" 2>&1 </dev/null & )
+  local i=0
+  until [ -S "$MON" ] && running; do
+    i=$((i+1)); [ "$i" -gt 60 ] && { tail -20 "$REPO/build/qemu-launch.log"; die "QEMU did not come up"; }
+    sleep 1
+  done
+  sleep 6   # let the OS reach the watchface before anyone screenshots
+  echo "sim: booted $have (window is open; uart1.log has serial output)"
+}
+
+cmd_rebuild() {
+  activate
+  ( cd "$REPO" && ./pbl build )
+  if running; then cmd_boot; else echo "sim: built (not running -- ./sim boot)"; fi
+}
+
+cmd_shot() {
+  local out="${1:-$REPO/build/screenshot.png}"
+  running || die "QEMU is not running -- ./sim boot"
+  activate
+  ( cd "$REPO" && ./pbl screenshot --screenshot-output "$out" >/dev/null )
+  echo "$out"
+}
+
+# PebbleOS buttons are wired to arrow keys in the emulated device.
+cmd_key() {
+  [ $# -ge 1 ] || die "usage: sim key <back|select|up|down> ..."
+  local args=()
+  for k in "$@"; do
+    case "$k" in
+      back|left)    args+=("sendkey left") ;;
+      select|right) args+=("sendkey right") ;;
+      up)           args+=("sendkey up") ;;
+      down)         args+=("sendkey down") ;;
+      *) die "unknown key '$k' (back|select|up|down)" ;;
+    esac
+  done
+  monitor "${args[@]}"
+}
+
+case "${1:-}" in
+  boot)      shift; cmd_boot "$@" ;;
+  stop)      cmd_stop ;;
+  rebuild)   cmd_rebuild ;;
+  shot)      shift; cmd_shot "$@" ;;
+  key)       shift; cmd_key "$@" ;;
+  tap)       shift; activate; ( cd "$REPO" && ./pbl touch "$@" ) ;;
+  swipe)     shift; activate; ( cd "$REPO" && ./pbl swipe "$@" ) ;;
+  console)   activate; ( cd "$REPO" && ./pbl console ) ;;
+  logs)      tail -f "$REPO/uart1.log" ;;
+  app)       shift; [ $# -eq 1 ] || die "usage: sim app <file.pbw>"; pebble install "$1" --qemu ;;
+  board)     configured_board ;;
+  *)
+    sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 1 ;;
+esac
