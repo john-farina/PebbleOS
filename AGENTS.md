@@ -94,3 +94,40 @@ Time 2 platform at its real 200x228 geometry.
 
 Verify visual changes yourself by taking a screenshot and reading the PNG.
 Do not ask the user to look at the emulator window.
+
+## Git workflow (fork-local)
+
+Two branches, deliberately separated:
+
+- **`mine`** — the working branch, tracks `origin/mine` (the personal fork).
+  All fork-local work lands here, including `./sim`, the `pebble-sim` skill,
+  and this section. Default branch to be on.
+- **`main`** — a clean mirror, tracks `upstream/main`. Never commit to it.
+  Refresh with `git fetch upstream && git switch main && git merge --ff-only
+  upstream/main`, then `git switch mine && git rebase main`.
+
+Pushing to `upstream` is disabled at the remote, so pushes cannot go to
+coredevices by accident.
+
+**Contributing something upstream later:** branch off clean `main`, never off
+`mine` — `git switch -c area/thing main` — then cherry-pick just the relevant
+commits so no fork-local file rides along. Push to `origin` and open the PR
+from there.
+
+Commits are governed by upstream `CONTRIBUTING.md` and enforced by hooks:
+
+- `prepare-commit-msg` adds the DCO `Signed-off-by` automatically; it must
+  match the commit author, so never override the author.
+- `commit-msg` runs `gitlint` with the repo's custom rules. Title must be
+  `area: description`; body wraps at 100 columns.
+- Commits must be atomic and self-contained — one logical change each,
+  preserving bisectability.
+- Add `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
+  whenever an AI wrote part of the change. This is a required disclosure
+  upstream, and it is an attestation — never add it to a commit the AI did
+  not actually write, and never omit it from one it did.
+- `Fixes #123` in the body for issue references; never in code comments.
+
+Upstream's generative-AI policy makes the *submitter* responsible for
+personally reviewing AI-written code before opening a PR. Flag that
+expectation rather than assuming a generated change is PR-ready.
