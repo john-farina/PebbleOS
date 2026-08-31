@@ -1,0 +1,31 @@
+<svg width="128" height="134" viewBox="0 0 128 134" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- watch body -->
+  <rect x="27" width="70" height="132" rx="1" fill="#242B35"/>
+
+  <!-- lugs -->
+  <path d="M0 60C0 58.3431 1.34315 57 3 57H8V77H3C1.34315 77 0 75.6569 0 74V60Z" fill="#414B5B"/>
+  <path d="M116 57H121C122.657 57 124 58.3431 124 60V74C124 75.6569 122.657 77 121 77H116V57Z" fill="#414B5B"/>
+
+  <!-- side buttons -->
+  <path d="M115 84L119.33 86.5C120.765 87.3284 121.257 89.1632 120.428 90.5981L113.428 102.722C112.6 104.157 110.765 104.649 109.33 103.821L105 101.321L115 84Z" fill="#414B5B"/>
+  <path d="M105 33L109.33 30.5C110.765 29.6716 112.6 30.1632 113.428 31.5981L120.428 43.7224C121.257 45.1573 120.765 46.9921 119.33 47.8205L115 50.3205L105 33Z" fill="#414B5B"/>
+
+  <!-- face -->
+  <circle cx="62" cy="66" r="56" fill="#8C99AB"/>
+
+  <!-- the stone -->
+  <path d="M34 91L27 78L33 62L46 50L61 45L78 51L90 63L96 79L89 91H34Z"
+        fill="white" stroke="#12161C" stroke-width="4"
+        stroke-miterlimit="10" stroke-linejoin="round"/>
+
+  <!-- cut facet catching the light -->
+  <path d="M61 45L46 50L33 62L27 78L34 91H44L38 74L44 59Z" fill="#DFE4EA"/>
+
+  <!-- face -->
+  <path d="M51 65V72" stroke="#12161C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 65V72" stroke="#12161C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M51 81L61.5 84L72 81" stroke="#12161C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ground -->
+  <path d="M24 91H100" stroke="#12161C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

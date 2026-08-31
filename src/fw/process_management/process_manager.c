@@ -203,7 +203,7 @@ bool process_manager_check_SDK_compatible(const AppInstallId id) {
 
   ExpandableDialog *expandable_dialog = expandable_dialog_create("Incompatible SDK");
   Dialog *dialog = expandable_dialog_get_dialog(expandable_dialog);
-  const char *error_text = i18n_noop("This app requires a newer version of the Pebble firmware.");
+  const char *error_text = i18n_noop("This app requires a newer version of the Stone firmware.");
   dialog_set_text(dialog, i18n_get(error_text, expandable_dialog));
   dialog_set_icon(dialog, RESOURCE_ID_GENERIC_WARNING_SMALL);
   i18n_free(error_text, expandable_dialog);

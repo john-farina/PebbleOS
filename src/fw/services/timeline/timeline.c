@@ -694,7 +694,7 @@ static void prv_do_remote_action(const Uuid *id, TimelineItemActionType type,
   } else {
     // We know we aren't connected, don't wait around for a response that won't come
     prv_put_notification_action_result(
-        id, i18n_get("Can't connect. Relaunch Pebble Time app on phone.", &i18n_key),
+        id, i18n_get("Can't connect. Relaunch the Stone app on phone.", &i18n_key),
         TIMELINE_RESOURCE_GENERIC_WARNING, ActionResultTypeFailure);
   }
 }

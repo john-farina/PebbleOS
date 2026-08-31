@@ -72,7 +72,7 @@ void health_tracking_ui_show_message(uint32_t res_id, const char *text, bool sho
 void health_tracking_ui_feature_show_disabled(void) {
   /// Feature requires health dialog
   static const char *msg =
-      i18n_noop("This feature requires Pebble Health to work. Enable Health in the Pebble"
+      i18n_noop("This feature requires Stone Health to work. Enable Health in the Stone"
                 " mobile app to continue.");
 
   health_tracking_ui_show_message(RESOURCE_ID_GENERIC_WARNING_TINY, msg, false);

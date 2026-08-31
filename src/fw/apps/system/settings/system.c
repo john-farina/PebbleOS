@@ -668,7 +668,7 @@ static void prv_debugging_interstitial_trigger(SettingsSystemData *context) {
   }
 
   ConfirmationDialog *confirmation_dialog = prv_settings_confirm("Debugging confirmation",
-      i18n_noop("PebbleOS developers only!"), RESOURCE_ID_GENERIC_WARNING_SMALL);
+      i18n_noop("Stone OS developers only!"), RESOURCE_ID_GENERIC_WARNING_SMALL);
   actionable_dialog_set_user_data((ActionableDialog *)confirmation_dialog, (void *)context);
   confirmation_dialog_set_click_config_provider(confirmation_dialog,
       prv_debugging_interstitial_click_config);

@@ -311,7 +311,7 @@ static void prv_handle_ready_event(VoiceUiData *data, PebbleVoiceServiceEvent *e
       // tell the watch whether or not voice reply is enabled
       data->error_count = MAX_ERROR_COUNT;   // exit UI after the dialog is shown
       if (data->show_error_dialog) {
-        prv_push_long_error_dialog(data, NULL, i18n_noop("Enable voice in the settings page of the Pebble app."),
+        prv_push_long_error_dialog(data, NULL, i18n_noop("Enable voice in the settings page of the Stone app."),
                                    RESOURCE_ID_GENERIC_WARNING_TINY);
         data->error_exit_status = DictationSessionStatusFailureDisabled;
       } else {
