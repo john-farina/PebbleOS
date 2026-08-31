@@ -113,3 +113,9 @@ boards/index.md
 :caption: 📖 Reference
 reference/index.md
 ```
+
+```{toctree}
+:hidden:
+:caption: 🪨 Stone OS
+stone/index.md
+```
