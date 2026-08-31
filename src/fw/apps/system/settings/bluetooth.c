@@ -437,7 +437,7 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
           graphics_draw_text(ctx, i18n_get("Disable Airplane Mode to connect.", data), font,
                              box, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
         } else {
-          graphics_draw_text(ctx, i18n_get("Open the Pebble app on your phone to connect.", data),
+          graphics_draw_text(ctx, i18n_get("Open the Stone app on your phone to connect.", data),
                              font, box, GTextOverflowModeTrailingEllipsis,
                              GTextAlignmentCenter, NULL);
         }

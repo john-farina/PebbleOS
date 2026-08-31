@@ -152,7 +152,7 @@ void crashed_ui_show_worker_crash(const AppInstallId install_id) {
 // ---------------------------------------------------------------------------
 #define CORE_DUMP_COMPLETE \
   i18n_noop("A bug report has been captured. " \
-            "Please finish uploading the bug report using the Pebble phone app.")
+            "Please finish uploading the bug report using the Stone app.")
 
 //! Display a dialog for watch reset or bluetooth being stuck.
 static void prv_push_reset_dialog(void *context) {

@@ -49,7 +49,7 @@ static void prv_show_dialog(void *context) {
   WakeupUICbData *data = context;
 
   const char* missed_text_raw =
-      i18n_noop("While your Pebble was off wakeup events occurred for:\n");
+      i18n_noop("While your watch was off wakeup events occurred for:\n");
   const char* missed_text = i18n_get(missed_text_raw, data);
 
   // Find the size of all of the missed_apps names (no max length defined)

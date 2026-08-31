@@ -1,5 +1,10 @@
 # Stone OS
 
+```{image} logo.svg
+:alt: Stone OS
+:width: 128px
+```
+
 Stone OS is a personal fork of [PebbleOS](https://github.com/coredevices/PebbleOS),
 running on a Pebble Time 2 (`obelix@pvt`).
 
@@ -74,6 +79,12 @@ Current permanent diff against upstream files:
 | --- | --- |
 | `Kconfig` | one `rsource "Kconfig.stone"` line |
 | `docs/index.md` | one toctree block |
+| `src/fw/board/splash.h` | three lines selecting the Stone wordmark |
+| 11 source files | one user-visible string each (the rebrand) |
+
+The eleven string edits are the unavoidable cost of the rebrand: they live
+inside upstream files by definition. Each is a single line, so a conflict is a
+one-line resolution that `rerere` learns once.
 
 ## Commits
 

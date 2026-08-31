@@ -190,7 +190,7 @@ static void prv_init(void) {
 
   if (!activity_prefs_tracking_is_enabled()) {
     /// Health disabled text
-    static const char *msg = i18n_noop("Enable Pebble Health in the mobile app to track workouts");
+    static const char *msg = i18n_noop("Enable Stone Health in the mobile app to track workouts");
     health_tracking_ui_show_message(RESOURCE_ID_HEART_TINY, msg, true);
     return;
   }

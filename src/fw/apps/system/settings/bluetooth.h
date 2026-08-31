@@ -34,4 +34,4 @@ const SettingsModuleMetadata *settings_bluetooth_get_info(void);
 bool settings_bluetooth_is_sharing_heart_rate_for_stored_remote(StoredRemote* remote);
 
 #define BT_FORGET_PAIRING_STR \
-  i18n_noop("Remember to also forget your Pebble's Bluetooth connection from your phone.")
+  i18n_noop("Remember to also forget your watch's Bluetooth connection from your phone.")
