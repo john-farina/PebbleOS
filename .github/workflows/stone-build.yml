@@ -1,0 +1,214 @@
+name: Stone Build
+
+# Upstream's workflows only trigger on `main`, so PRs into `stone` would
+# otherwise get no CI at all. This is the fork's build gate: it produces the
+# one artifact a sealed Pebble Time 2 will actually accept — a merged
+# dual-slot release bundle for obelix@pvt.
+
+on:
+  push:
+    branches: [stone]
+  pull_request:
+    branches: [stone]
+  workflow_call:
+  workflow_dispatch:
+
+env:
+  BOARD: obelix@pvt
+  BOARD_NAME: obelix_pvt
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      should-build: ${{ github.event_name != 'pull_request' || steps.filter.outputs.src == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            src:
+              - '.github/actions/**'
+              - '.github/workflows/stone-build.yml'
+              - 'boards/**'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'Kconfig*'
+              - 'apps/**'
+              - 'resources/**'
+              - 'sdk/**'
+              - 'soc/**'
+              - 'src/**'
+              - 'subsys/**'
+              - 'third_party/**'
+              - 'tools/**'
+              - 'pbl'
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.should-build == 'true'
+    runs-on: ubuntu-24.04
+
+    container:
+      image: ghcr.io/coredevices/pebbleos-docker:v7
+
+    strategy:
+      matrix:
+        slot: [0, 1]
+
+    steps:
+      - name: Mark Github workspace as safe
+        run: git config --system --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      # git describe drives the firmware version, so the tags have to be here.
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Rebase onto target branch
+        uses: ./.github/actions/rebase
+        with:
+          submodules: true
+
+      - name: Install Python dependencies
+        run: |
+          pip install -U pip
+          pip install -r requirements.txt
+
+      # CONFIG_RELEASE is not optional: the watch refuses a debug bundle over
+      # release firmware. CONFIG_FIRMWARE_SLOT builds the image for one slot;
+      # an OTA lands in whichever slot is inactive, so we need both.
+      - name: Configure
+        run: ./pbl configure --board "$BOARD" -DCONFIG_FIRMWARE_SLOT=${{ matrix.slot }} -DCONFIG_RELEASE=y
+
+      - name: Build
+        run: ./pbl build
+
+      - name: Bundle
+        run: ./pbl bundle
+
+      # No shell globbing here on purpose: an earlier version derived the
+      # version string in bash and failed before printing anything useful.
+      # upload-artifact does the matching and reports exactly what it found,
+      # so the build job just hands over whatever the build produced and the
+      # merge job does the renaming.
+      - name: Store slot images
+        uses: actions/upload-artifact@v7
+        with:
+          name: stone-fw-slot${{ matrix.slot }}
+          path: |
+            build/*.pbz
+            build/pebbleos.elf
+            build/pebbleos_loghash_dict.json
+          if-no-files-found: error
+
+  bundle:
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download slot artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: stone-fw-slot*
+
+      - name: Merge the two slots into one installable bundle
+        run: |
+          set -euo pipefail
+          echo "--- what the build jobs actually produced ---"
+          find stone-fw-slot0 stone-fw-slot1 -type f | sort
+
+          slot0=$(find stone-fw-slot0 -name '*.pbz' | head -1)
+          slot1=$(find stone-fw-slot1 -name '*.pbz' | head -1)
+          if [ -z "$slot0" ] || [ -z "$slot1" ]; then
+            echo "::error::missing a slot bundle (slot0='$slot0' slot1='$slot1')"
+            exit 1
+          fi
+
+          # e.g. normal_obelix_pvt_v4.36.0-98-g137d1852_slot0.pbz -> v4.36.0-98-g137d1852
+          version=$(basename "$slot0" | sed -E "s/^normal_${BOARD_NAME}_//; s/(_slot[01])?\.pbz$//")
+          v1=$(basename "$slot1" | sed -E "s/^normal_${BOARD_NAME}_//; s/(_slot[01])?\.pbz$//")
+          if [ "$version" != "$v1" ]; then
+            echo "::error::slot bundles disagree on version: '$version' vs '$v1'"
+            exit 1
+          fi
+          echo "version=${version}"
+
+          mkdir out
+          python3 tools/merge_pbz.py \
+            --slot0-pbz "$slot0" \
+            --slot1-pbz "$slot1" \
+            --output "out/stone_${BOARD_NAME}_${version}.pbz"
+
+          cp stone-fw-slot0/pebbleos.elf "out/stone_${BOARD_NAME}_${version}_slot0.elf"
+          cp stone-fw-slot1/pebbleos.elf "out/stone_${BOARD_NAME}_${version}_slot1.elf"
+          # Without the matching loghash dictionary a crash log is a wall of
+          # hashes, so it travels with the bundle.
+          if [ -f stone-fw-slot0/pebbleos_loghash_dict.json ]; then
+            cp stone-fw-slot0/pebbleos_loghash_dict.json \
+              "out/stone_${BOARD_NAME}_${version}_loghash_dict.json"
+          else
+            echo "::warning::no loghash dictionary in this build"
+          fi
+
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          ls -la out
+
+      # A green merge only proves merge_pbz.py ran. The watch cares about the
+      # shape: a dual-slot bundle carries a manifest per slot, each declaring
+      # its own slot number. Assert that here rather than discovering it during
+      # an install.
+      - name: Check the bundle is dual-slot and self-consistent
+        run: |
+          python3 - "out/stone_${BOARD_NAME}_${VERSION}.pbz" <<'EOF'
+          import json, sys, zipfile
+
+          path = sys.argv[1]
+          z = zipfile.ZipFile(path)
+          names = set(z.namelist())
+          problems = []
+
+          for i in (0, 1):
+              key = f"slot{i}/manifest.json"
+              if key not in names:
+                  problems.append(f"missing {key}")
+                  continue
+              fw = json.loads(z.read(key))["firmware"]
+              if fw.get("slot") != i:
+                  problems.append(f"{key} declares slot {fw.get('slot')}, expected {i}")
+              if fw.get("type") != "normal":
+                  problems.append(f"{key} is type {fw.get('type')}, expected normal")
+              print(f"slot{i}: {fw['name']} {fw['versionTag']} hwrev={fw['hwrev']} "
+                    f"size={fw['size']}")
+
+          if problems:
+              sys.exit("bundle is not installable: " + "; ".join(problems))
+          print(f"OK: {path} is a dual-slot bundle")
+          EOF
+
+      - name: Store the installable bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: stone-firmware-${{ env.VERSION }}
+          path: out
+
+  status:
+    needs: [changes, build, bundle]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - if: >-
+          needs.build.result == 'failure' || needs.build.result == 'cancelled' ||
+          needs.bundle.result == 'failure' || needs.bundle.result == 'cancelled'
+        run: exit 1
