@@ -1,0 +1,187 @@
+name: Stone Sync
+
+# Upstream moves ~12 commits a day. This keeps `main` an exact mirror and
+# replays the Stone patch queue on top of it, so `git log main..stone` stays a
+# precise description of the fork rather than drifting into a merge swamp.
+#
+# On conflict it aborts and files an issue: the branch is left exactly as it
+# was, still building, and the resolution happens by hand.
+
+on:
+  schedule:
+    # 06:17 UTC. Off the hour on purpose — scheduled runs bunch up at :00.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: stone-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM: https://github.com/coredevices/PebbleOS.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    outputs:
+      stone_moved: ${{ steps.rebase.outputs.moved }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: stone
+          fetch-depth: 0
+
+      # rerere replays conflict resolutions. The same patches get rebased over
+      # the same upstream churn every night, so without this you resolve the
+      # same conflict repeatedly; with it, only the first time costs anything.
+      - name: Restore rerere cache
+        uses: actions/cache@v4
+        with:
+          path: .git/rr-cache
+          key: stone-rerere-${{ github.run_id }}
+          restore-keys: stone-rerere-
+
+      - name: Configure git
+        run: |
+          git config user.name "Stone Sync"
+          git config user.email "noreply@github.com"
+          git config rerere.enabled true
+          git config rerere.autoupdate true
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM" 2>/dev/null || \
+            git remote set-url upstream "$UPSTREAM"
+          git fetch --no-tags upstream main
+          git fetch --tags upstream
+
+      # main is a mirror and nothing is ever committed to it, so this is always
+      # a fast-forward. --ff-only makes that an assertion rather than a hope.
+      - name: Fast-forward main
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main
+          if git merge-base --is-ancestor origin/main upstream/main; then
+            git push origin upstream/main:refs/heads/main
+            echo "main -> $(git rev-parse --short upstream/main)"
+          else
+            echo "::error::main has commits upstream does not. It is meant to be an" \
+                 "untouched mirror; investigate before syncing."
+            exit 1
+          fi
+          git push --tags origin || true
+
+      - name: Rebase stone onto upstream
+        id: rebase
+        run: |
+          set -uo pipefail
+          before=$(git rev-parse HEAD)
+          base=$(git rev-parse upstream/main)
+
+          if [ "$(git merge-base HEAD "$base")" = "$base" ]; then
+            echo "already on the current upstream base"
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git rebase upstream/main; then
+            after=$(git rev-parse HEAD)
+            echo "rebased $before -> $after"
+            git push --force-with-lease origin stone
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "conflict=" >> "$GITHUB_OUTPUT"
+          else
+            # Name the patch and files before aborting, while the state exists.
+            patch=$(git log -1 --format='%h %s' REBASE_HEAD 2>/dev/null || echo "unknown")
+            files=$(git diff --name-only --diff-filter=U | sed 's/^/  - /')
+            git rebase --abort || true
+            {
+              echo "moved=false"
+              echo "conflict=true"
+              echo "patch=${patch}"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "files<<EOF"
+              echo "$files"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "::warning::rebase conflicted on ${patch}; stone left untouched"
+          fi
+
+      # The patch queue only works if the conflict is visible. Reuse one issue
+      # rather than filing a new one nightly for the same stuck patch.
+      - name: Report a conflict
+        if: steps.rebase.outputs.conflict == 'true'
+        uses: actions/github-script@v7
+        env:
+          PATCH: ${{ steps.rebase.outputs.patch }}
+          FILES: ${{ steps.rebase.outputs.files }}
+        with:
+          script: |
+            const title = 'Stone sync: rebase onto upstream conflicts';
+            const body = [
+              `The nightly rebase of \`stone\` onto \`upstream/main\` stopped on:`,
+              '', '```', process.env.PATCH, '```', '',
+              'Conflicting files:', '', process.env.FILES || '  (none reported)', '',
+              '`stone` was **not** moved — it is still on its previous base and still',
+              'builds. Resolve it locally:', '',
+              '```shell',
+              'git fetch upstream main',
+              'git checkout stone',
+              'git rebase upstream/main',
+              '# fix, then',
+              'git rebase --continue',
+              'git push --force-with-lease origin stone',
+              '```', '',
+              'If upstream has overtaken the patch, drop it with `git rebase --skip`',
+              'and remove it from the queue instead of forcing it through.', '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'stone-sync',
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                ...context.repo, title, body, labels: ['stone-sync'],
+              });
+            }
+
+      # feat/* branches are deliberately NOT rebased here: force-pushing a
+      # branch someone has checked out locally destroys work in progress. Report
+      # which ones would conflict and let their owner decide when to move them.
+      - name: Check feature branches against the new base
+        if: steps.rebase.outputs.moved == 'true'
+        run: |
+          set -uo pipefail
+          git fetch origin '+refs/heads/feat/*:refs/remotes/origin/feat/*' || true
+          any=0
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat); do
+            branch=${ref#origin/}
+            git checkout -q --detach "$ref"
+            if git rebase upstream/main >/dev/null 2>&1; then
+              echo "ok        ${branch}"
+            else
+              git rebase --abort || true
+              echo "CONFLICTS ${branch}"
+              any=1
+            fi
+          done
+          [ "$any" = "0" ] && echo "all feature branches still rebase cleanly" || true
+          git checkout -q stone
+
+  # A GITHUB_TOKEN push does not trigger workflows, so the build has to be
+  # invoked here rather than left to the push event on `stone`.
+  build:
+    needs: sync
+    if: needs.sync.outputs.stone_moved == 'true'
+    uses: ./.github/workflows/stone-build.yml
