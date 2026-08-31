@@ -184,6 +184,58 @@ upstream base compares as equal — so moving between branch builds on the same
 base installs directly into the inactive slot. Only crossing an upstream base
 backwards reads as a downgrade.
 
+## What survives a bad build
+
+Firmware and user data live in different flash regions. On obelix:
+
+| Region | |
+| --- | --- |
+| `FIRMWARE_SLOT_0` / `_1` | 3 MB each — what an OTA overwrites |
+| `SYSTEM_RESOURCES_BANK_0` / `_1` | 2 MB each — double-banked, also replaced |
+| `FILESYSTEM` | **21 MB — settings, apps, watchfaces, health, pairing** |
+
+An install writes the firmware into the *inactive* slot and resources into the
+unused bank. **It never touches `FILESYSTEM`.** So a bad build costs you a
+reinstall, not your data.
+
+Two things do wipe data, and both are deliberate acts rather than accidents:
+
+- **Factory reset.** Wipes the filesystem and invalidates both firmware slots.
+- **A filesystem newer than the firmware understands.** `pfs_init()` treats a
+  filesystem whose version exceeds `PFS_CUR_VERSION` as inactive and formats it.
+  In practice `PFS_VERS` has never been bumped, so this is theoretical — but it
+  is the one way a *downgrade* could cost you data, so check before rolling back
+  across a version that touched `pfs.c`.
+
+## Going back
+
+In increasing order of disruption:
+
+1. **Reinstall a known-good bundle.** Data intact, minutes. Use a Safe Build
+   release (below). Note that the bootloader picks the slot with the highest
+   boot priority and that priority is stamped at *build* time, so re-installing
+   an older build does not necessarily make it boot — the channel server
+   re-stamps priority on serve to make this reliable.
+2. **PRF.** Recovery boot, then reinstall from the phone. Data intact. Note that
+   booting PRF **invalidates both firmware slots** (`src/fw/main.c`), so this is
+   a full firmware reinstall rather than a quick flip back.
+3. **Factory reset.** Wipes data. Only when something is genuinely broken.
+4. **Stock firmware via the official app.** The floor you can always return to.
+
+## Safe Builds
+
+`stone-safe.yml` builds a bundle and publishes it as a **GitHub Release**, not
+an artifact — artifacts expire after 90 days, and a safety net with an expiry
+date is not a safety net.
+
+Run it from Actions → Stone Safe Build. It defaults to `main`, which is pristine
+upstream with none of our patches, so that build doubles as the "is this our bug
+or upstream's?" baseline. Point it at any ref to pin a Stone build you liked.
+
+The release tag is deliberately version-shaped (`v4.36.0-safe12`): `git
+describe` feeds `tools/gitinfo.py`, which hard-fails on a tag it cannot parse,
+so a tag like `safe-2026-08-31` would break every later build that can reach it.
+
 ## Recovery
 
 A retail Pebble Time 2 has no exposed SWD header, so `./pbl flash` is not

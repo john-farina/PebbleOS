@@ -1,0 +1,166 @@
+name: Stone Safe Build
+
+# A known-good bundle you can always go back to.
+#
+# Two things make this different from the everyday build in stone-build.yml,
+# and both are the point:
+#
+#   1. It publishes a GitHub *Release*, not an artifact. Artifacts expire after
+#      90 days. A safety net with an expiry date is not a safety net.
+#   2. It is deliberately standalone rather than reusing stone-build.yml. The
+#      recovery path should not be breakable by a change to the everyday path.
+#
+# Defaults to building `main` — pristine upstream, none of our patches — so it
+# doubles as the "is this our bug?" baseline. Point it at any ref to pin a
+# Stone build you liked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or SHA to build"
+        required: false
+        default: main
+      label:
+        description: "Short label for the release tag"
+        required: false
+        default: safe
+
+permissions:
+  contents: write
+
+env:
+  BOARD: obelix@pvt
+  BOARD_NAME: obelix_pvt
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/coredevices/pebbleos-docker:v7
+    strategy:
+      matrix:
+        slot: [0, 1]
+    steps:
+      - name: Mark Github workspace as safe
+        run: git config --system --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Install Python dependencies
+        run: |
+          pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Configure
+        run: ./pbl configure --board "$BOARD" -DCONFIG_FIRMWARE_SLOT=${{ matrix.slot }} -DCONFIG_RELEASE=y
+
+      - name: Build
+        run: ./pbl build
+
+      - name: Bundle
+        run: ./pbl bundle
+
+      - name: Store slot images
+        uses: actions/upload-artifact@v7
+        with:
+          name: safe-fw-slot${{ matrix.slot }}
+          path: |
+            build/*.pbz
+            build/pebbleos.elf
+            build/pebbleos_loghash_dict.json
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Download slot artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: safe-fw-slot*
+
+      - name: Merge and name the release
+        id: prep
+        run: |
+          set -euo pipefail
+          slot0=$(find safe-fw-slot0 -name '*.pbz' | head -1)
+          slot1=$(find safe-fw-slot1 -name '*.pbz' | head -1)
+          version=$(basename "$slot0" | sed -E "s/^normal_${BOARD_NAME}_//; s/(_slot[01])?\.pbz$//")
+
+          mkdir out
+          python3 tools/merge_pbz.py \
+            --slot0-pbz "$slot0" --slot1-pbz "$slot1" \
+            --output "out/stone_${BOARD_NAME}_${version}.pbz"
+          cp safe-fw-slot0/pebbleos.elf "out/stone_${BOARD_NAME}_${version}_slot0.elf"
+          cp safe-fw-slot1/pebbleos.elf "out/stone_${BOARD_NAME}_${version}_slot1.elf"
+          cp safe-fw-slot0/pebbleos_loghash_dict.json \
+            "out/stone_${BOARD_NAME}_${version}_loghash_dict.json" 2>/dev/null || \
+            echo "::warning::no loghash dictionary"
+
+          # The tag has to stay version-shaped. tools/gitinfo.py runs
+          # `git describe` and hard-fails on a tag it cannot parse, so a tag
+          # like `safe-2026-08-31` would break every later build that can reach
+          # it. `vX.Y.Z-safeN` parses, and stays in the bootloader's dev band.
+          mmp=$(git describe --tags --abbrev=0 --match 'v[0-9]*' | sed -E 's/^v//; s/-.*$//')
+          echo "tag=v${mmp}-${{ inputs.label }}${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          ls -la out
+
+      - name: Check the bundle is dual-slot before calling it safe
+        run: |
+          python3 - "out/stone_${BOARD_NAME}_${{ steps.prep.outputs.version }}.pbz" <<'EOF'
+          import json, sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1]); names = set(z.namelist()); bad = []
+          for i in (0, 1):
+              key = f"slot{i}/manifest.json"
+              if key not in names:
+                  bad.append(f"missing {key}"); continue
+              fw = json.loads(z.read(key))["firmware"]
+              if fw.get("slot") != i:
+                  bad.append(f"{key} declares slot {fw.get('slot')}")
+              print(f"slot{i}: {fw['versionTag']} hwrev={fw['hwrev']} size={fw['size']}")
+          if bad:
+              sys.exit("not installable: " + "; ".join(bad))
+          print("OK: dual-slot bundle")
+          EOF
+
+      - name: Publish a permanent release
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          tag_name: ${{ steps.prep.outputs.tag }}
+          target_commitish: ${{ steps.prep.outputs.sha }}
+          name: "Safe build — ${{ inputs.ref }} @ ${{ steps.prep.outputs.sha }}"
+          files: out/*
+          body: |
+            A known-good bundle, kept forever. Built from
+            `${{ inputs.ref }}` at `${{ steps.prep.outputs.sha }}`.
+
+            Firmware version: `${{ steps.prep.outputs.version }}`
+
+            **To go back to this:** install
+            `stone_${{ env.BOARD_NAME }}_${{ steps.prep.outputs.version }}.pbz`
+            through the companion app. Your data is untouched by a firmware
+            install — settings, watchfaces, health history and pairing all live
+            in a separate flash region from the firmware slots.
+
+            Keep the `_loghash_dict.json` next to it: without the matching one,
+            a crash log from this build is a wall of hashes.
