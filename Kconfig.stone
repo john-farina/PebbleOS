@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+menu "Stone OS"
+
+config STONE
+    bool "Stone OS fork additions"
+    default y
+    help
+      Master switch for everything this fork adds on top of upstream
+      PebbleOS. Every fork-local feature depends on it, so turning it
+      off builds firmware that is functionally upstream — useful for
+      bisecting a bug against stock behaviour without unwinding the
+      patch queue.
+
+      See docs/stone/index.md for the fork's conventions.
+
+endmenu
