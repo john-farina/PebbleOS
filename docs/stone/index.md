@@ -98,6 +98,20 @@ Upstream's rules, enforced by `gitlint`:
 Use `stone:` as the area for fork-local work that doesn't belong to an existing
 upstream area.
 
+## The nightly sync needs `stone` to be the default branch
+
+GitHub fires `schedule:` triggers only for workflows on the repository's
+**default branch**. `stone-sync.yml` lives on `stone`, and `main` is kept as a
+pristine upstream mirror carrying none of our workflows — so if the default
+branch is `main`, the nightly sync never runs and the fork quietly stops
+syncing while everything still looks green.
+
+Set the default branch to `stone` (Settings → General → Default branch). That
+also makes pull requests base correctly without having to retarget each one.
+
+Until then, run the sync by hand from the Actions tab (`Stone Sync` → Run
+workflow), which works regardless of the default branch.
+
 ## Set up rerere once
 
 ```shell
