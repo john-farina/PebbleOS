@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | All four written and building. Only features 1–2 seen on a screen |
+| **Status** | All four plus haptics, real previews and edge-back. Hardware-only from here |
 
 ## What this is
 
@@ -111,6 +111,9 @@ before pushing; CI is no longer the only compiler.
 | `apps: keep only apps in the main list` | `stone_app_list_is_app()`, the launcher filter hook, Settings > Apps |
 | `settings: let the app list be reordered on the watch` | Grab-and-move reordering, written to `lnc_ord` |
 | `apps: add the watchface picker` | The carousel: a system app, entered by holding the face |
+| `ui: add navigation haptics` | `stone_haptics`: Tick/Select/Enter/Bump, amplitude-controlled |
+| `apps: show real watchface miniatures in the picker` | Progressive thumbnail cache, captured at the app switch |
+| `touch: require the back swipe to start at the left edge` | Back is an edge gesture, gated in one place |
 
 Everything is behind `CONFIG_STONE`, with upstream's handlers kept on the `#else` path, so
 `CONFIG_STONE=n` still builds and still behaves like stock.
@@ -126,6 +129,24 @@ The thing that was *not* free: **watchfaces are deliberately excluded from touch
 comment *"Touch is reserved for watchapps; watchfaces must not consume it."* That rule is right
 for apps and is unchanged; the shell gets gestures from the kernel event loop instead, exactly as
 it already gets buttons.
+
+## The simulator cannot test any of this
+
+Recorded prominently because two sessions have now tried.
+
+- **QEMU never reports controller gestures.** `src/fw/drivers/qemu/qemu_touch.c` calls only
+  `touch_handle_update()` for finger down/up; it never calls `touch_handle_gesture()`. Every
+  watchface gesture here rides on the CST816's own gesture engine — long press `0x0C`, swipes
+  `0x01`–`0x04` — so **touch long-press and watchface swipes cannot fire in `qemu_emery` at all.**
+  `info mice` does report "Pebble Touch (absolute)", so mouse drags are real touch events; they
+  just never become gestures.
+- **`sendkey <key> <hold_ms>` does not produce a long click.** The monitor accepts the hold time,
+  but a `sendkey right 700` on the watchface opened the *launcher* — the tap path — rather than
+  the picker. So the hold-to-open-picker route is not drivable from the monitor either.
+
+What the simulator *can* still prove: the BACK toggle, the app list contents, Settings → Apps,
+and anything reachable by a plain button press. Everything gesture- or hold-driven needs the
+watch.
 
 ## Decided
 
@@ -348,3 +369,30 @@ failure there is silent by design.
   `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
   upstream sets the default only on a *successful* launch and writing the pref directly would
   strand the wearer on a face whose fetch failed.
+- **2026-09-01** — Built the three follow-ups John asked for: navigation haptics, real watchface
+  miniatures, and the edge-gated back swipe. All three compile; none has run.
+
+  The previews correction is the one worth carrying forward. The picker's old header comment
+  claimed real previews were impossible for three reasons and **two were wrong**: applib has no
+  scaler but the firmware ships two (the compositor's bilinear rescale, the weather app's squash),
+  and the heap argument was about a full frame when a thumbnail is 5KB — `clock_face.c:620`
+  already allocates a full 45KB frame in a system app and works. Only "a face that has never been
+  worn has never rendered a pixel" was true, and that is what makes the cache progressive rather
+  than impossible.
+
+  Two things a later session should not have to rediscover. The capture point is exactly
+  `prv_app_switch()` before `prv_app_cleanup()`: the outgoing face's frame is still in the system
+  framebuffer, the incoming app's first render is what clears it, and that function is KernelMain
+  so reading it cannot race a composite. And the framebuffer is ARGB2222 — averaging the bytes
+  during downscale mixes alpha into red and produces colours that were never in the image, so the
+  box filter averages each channel separately.
+
+  On haptics: the rate limit is load-bearing, not politeness. `vibe_pattern/service.c:381` drops
+  any enqueue made while a pattern plays, so an unthrottled tick gives *inconsistent* feedback.
+  And there is a perceptibility floor — too short and too soft is felt as nothing, which is why
+  the tick reuses the globe view's measured 25ms @ 25%.
+
+  On edge-back: Pebble has **no interactive transition**. `window_stack` offers only canned
+  compositor transitions, so the finger-tracked half of Apple's gesture cannot be built without
+  compositor work. The edge *gate* shipped; `stone_edge_back.c` holds the projection maths
+  (0.998 deceleration, ~half the velocity in pixels) ready for when there is something to drive.
