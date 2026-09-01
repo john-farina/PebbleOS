@@ -251,11 +251,56 @@ static void prv_dismiss_timeline_peek(ClickRecognizerRef recognizer, void *data)
   timeline_peek_dismiss();
 }
 
+#ifdef CONFIG_STONE
+// Back means one thing everywhere: go back a level. The watchface is the bottom of the stack, so
+// there is normally nothing to go back to -- which is what leaves the press free to mean "up to
+// the app list", the way pressing the crown on an Apple Watch face opens the Home Screen. A peek
+// is still a level, so it gets the first press.
+//
+// timeline_peek_get_item_id() yields UUID_INVALID when nothing is peeking, so telling the two
+// cases apart needs no new peek API.
+static void prv_back_click(ClickRecognizerRef recognizer, void *data) {
+  if (prv_is_any_combo_active()) {
+    return;
+  }
+  TimelineItemId peeked_id;
+  timeline_peek_get_item_id(&peeked_id);
+  if (!uuid_is_invalid(&peeked_id)) {
+    // Deliberately the upstream handler rather than timeline_peek_dismiss() directly: it keeps
+    // that function referenced in this build, so CONFIG_STONE=n and =y both compile clean.
+    prv_dismiss_timeline_peek(recognizer, data);
+    return;
+  }
+  prv_launch_launcher_app(recognizer, data);
+}
+
+// Select still opens the launcher unless the wearer has assigned it something else, so the default
+// is unchanged and the button becomes configurable for a tap the same way it already is for a
+// hold.
+static void prv_select_click(ClickRecognizerRef recognizer, void *data) {
+  if (prv_is_any_combo_active()) {
+    return;
+  }
+  if (quick_launch_single_click_is_enabled(BUTTON_ID_SELECT)) {
+    prv_launch_quick_launch_app(quick_launch_single_click_get_app(BUTTON_ID_SELECT),
+                                BUTTON_ID_SELECT, APP_LAUNCH_SYSTEM,
+                                APP_QUICK_LAUNCH_ACTION_TAP);
+    return;
+  }
+  prv_launch_launcher_app(recognizer, data);
+}
+#endif  // CONFIG_STONE
+
 static void prv_watchface_configure_click_handlers(void) {
   prv_configure_click_handler(BUTTON_ID_UP, prv_launch_up_down);
   prv_configure_click_handler(BUTTON_ID_DOWN, prv_launch_up_down);
+#ifdef CONFIG_STONE
+  prv_configure_click_handler(BUTTON_ID_SELECT, prv_select_click);
+  prv_configure_click_handler(BUTTON_ID_BACK, prv_back_click);
+#else
   prv_configure_click_handler(BUTTON_ID_SELECT, prv_launch_launcher_app);
   prv_configure_click_handler(BUTTON_ID_BACK, prv_dismiss_timeline_peek);
+#endif
 }
 
 void watchface_init(void) {
