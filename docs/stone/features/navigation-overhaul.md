@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | Feature 1 (buttons) done, untested on hardware. 2–4 not started |
+| **Status** | Features 1–3 written and building. Carousel not started |
 
 ## What this is
 
@@ -58,29 +58,32 @@ Four separable features:
 
 ## Where it stands
 
-**The button half of feature 1 is written and has never been compiled** — there is no ARM
-toolchain here, so the first real signal is CI, and the first real *test* is John's wrist.
-Two commits: `shell: let the middle button be assigned a tap action` (the `qlSingleClickSelect`
-preference and its "Tap Center" settings row) and `shell: make Back open the app list from the
-watchface` (both new handlers plus the click table). Everything is behind `CONFIG_STONE`, with
-the upstream handlers kept on the `#else` path, so `CONFIG_STONE=n` still builds and still
-behaves like stock.
+**Features 1, 2 and 3 are written and compile in CI. None of them has been on a wrist yet** --
+there is no ARM toolchain here, so CI is the only check that has run. Feature 4, the watchface
+carousel, is not started.
 
-Features 2, 3 and 4 are planned but not started. The **touch half of feature 1 is also not
-started** — see the next paragraph, which is the thing most likely to bite the next session.
+| Commit | What |
+| --- | --- |
+| `shell: let the middle button be assigned a tap action` | The `qlSingleClickSelect` preference and its "Tap Center" settings row |
+| `shell: make Back open the app list from the watchface` | The Stone click handlers and the click table |
+| `touch: let the watchface respond to gestures` | Controller gestures routed to the shell; CST816 swipe + long press dispatched |
+| `apps: keep only apps in the main list` | `stone_app_list_is_app()`, the launcher filter hook, Settings > Apps |
+| `settings: let the app list be reordered on the watch` | Grab-and-move reordering, written to `lnc_ord` |
 
-The research result that matters: **three of the four features are wiring, not new
-subsystems.** The launcher already filters its list; app order already persists to flash with
-a working write path; Quick Launch already configures click *and* hold per button. And there
-is already a full touch stack — service, session gating, tap/pan/swipe recognizers, and a
-tiered touch-navigation bridge, mostly Core Devices 2026. **Do not write a touch service.**
+Everything is behind `CONFIG_STONE`, with upstream's handlers kept on the `#else` path, so
+`CONFIG_STONE=n` still builds and still behaves like stock.
 
-The one thing that is *not* free: **watchfaces are deliberately excluded from touch.**
-`applib/touch_service.c:22-25` returns a NULL service state for `sys_app_is_watchface()` with
-the comment *"Touch is reserved for watchapps; watchfaces must not consume it."* So no gesture
-reaches a running watchface today, and the Back change above does **not** give
-swipe-right-opens-apps for free the way it first appeared to. See Decided for the shape that
-gets around it without fighting upstream's rule.
+The research result that matters: **three of the four features were wiring, not new subsystems.**
+The launcher already filtered its list; app order already persisted to flash with a working write
+path; Quick Launch already configured click *and* hold per button. And there is already a full
+touch stack -- service, session gating, tap/pan/swipe recognizers, and a tiered touch-navigation
+bridge, mostly Core Devices 2026. **Do not write a touch service.**
+
+The thing that was *not* free: **watchfaces are deliberately excluded from touch.**
+`applib/touch_service.c:22-25` returns a NULL service state for `sys_app_is_watchface()` with the
+comment *"Touch is reserved for watchapps; watchfaces must not consume it."* That rule is right
+for apps and is unchanged; the shell gets gestures from the kernel event loop instead, exactly as
+it already gets buttons.
 
 ## Decided
 
@@ -96,12 +99,13 @@ gets around it without fighting upstream's rule.
   "dismiss the peek if there is one, otherwise open the launcher" needs no new API and loses
   no behaviour. This was flagged as the blocking design problem. It is not one.
 - **Watchface touch is handled in the shell, not the app.** Because the app-side touch
-  service refuses watchfaces by design, route `PEBBLE_TOUCH_EVENT` / `PEBBLE_GESTURE_EVENT`
-  in `kernel/event_loop.c` when `app_manager_is_watchface_running()`, into a new
-  `watchface_handle_touch_event()` beside the existing `watchface_handle_button_event()`
-  (`shell/normal/watchface.c:266`). That mirrors exactly how buttons already reach the
-  watchface, keeps upstream's "watchfaces must not consume touch" rule intact for *apps*, and
-  costs one appended case in the event loop plus one new function.
+  service refuses watchfaces by design, `PEBBLE_GESTURE_EVENT` is routed in
+  `kernel/event_loop.c` when `app_manager_is_watchface_running()` into
+  `watchface_handle_gesture_event()`, beside the existing `watchface_handle_button_event()`.
+  That mirrors exactly how buttons already reach the watchface and keeps upstream's "watchfaces
+  must not consume touch" rule intact for *apps*. Gestures are gated on
+  `touch_session_is_active()`, whose own documentation names the idle watchface as the one
+  surface it guards -- without it a sleeve opens the app list in a pocket.
 - **Use the CST816's own gesture engine for watchface gestures.** The controller already
   reports tap, double-tap, swipe up/down/left/right and long-press; the driver decodes the
   constants (`drivers/touch/cst816/cst816.c:36-43`) but only dispatches tap and double-tap
@@ -200,8 +204,50 @@ If step 1 opens nothing, or step 3 opens the app list on the *first* press, that
 check misfiring — say which, because the two failures point at different halves of
 `prv_back_click`.
 
-**Touch is not part of this yet.** Swiping on the watchface still does nothing; that is
-expected, not a bug. See Where it stands.
+### Feature 1, touch
+
+Touch navigation has to be on: **Settings → Display → Touch** and **Touch Navigation**.
+
+Gestures are ignored until the watch is awake and "armed" -- a button press or the wake gesture
+does that -- so if a swipe seems to do nothing, press a button first and try again. That gate is
+deliberate: without it a sleeve would open the app list in your pocket.
+
+9. On the watchface, swipe **right**. The app list opens, the same as pressing BACK. With a
+   notification peeking, the first right-swipe dismisses the peek instead.
+10. Swipe **left**. The app list opens (or whatever Tap Center is set to).
+11. Swipe **up** and **down**. Same as tapping the DOWN and UP buttons — by default Timeline and
+    Health. This follows the same convention as scrolling everywhere else in the watch: the
+    content moves opposite to your finger.
+12. **Tap** and **double-tap** the face. The backlight comes on and nothing launches. That is
+    deliberate — waking the screen must not open an app.
+13. **Long-press** the face. Nothing happens yet; that gesture is reserved for the watchface
+    carousel and is wired up with it.
+
+### Feature 2, the app list
+
+14. Open the app list. **Golf, Send Text, Reminders and Sports are gone.** Music, Settings,
+    Alarms, Notifications, Weather, Workout, Health, Watchfaces, Timeline and every third-party
+    app are all still there, in the same order as before.
+15. Go to **Settings → Apps**. Scroll past the main list to the heading **"Not in the list"**.
+    Golf is under it, along with Send Text, Reminders and Sports if your phone has enabled them.
+16. Select Golf. It launches normally.
+
+### Feature 3, reordering
+
+17. In **Settings → Apps**, put the selection on **Weather** and press SELECT. The row gains a
+    **"Moving"** subtitle — it has been picked up.
+18. Press UP twice. Weather moves up two rows, travelling with the selection.
+19. Press SELECT. The subtitle goes away and the order is saved.
+20. Leave Settings, open the app list. **Weather is two rows higher.**
+21. Reboot the watch and open the app list again. **Weather is still there.**
+22. Back in Settings → Apps, try to move an app down past the "Not in the list" heading. It
+    should refuse — a grabbed app stays in the main list.
+23. With nothing grabbed, scroll down through the heading. The selection should **skip over it**
+    rather than landing on it.
+
+If reordering appears to work but does not survive a reboot, the write is the suspect, not the
+UI: `write_uuid_list_to_file` runs on KernelBackground via `system_task_add_callback`, and a
+failure there is silent by design.
 
 ## Log
 
@@ -234,3 +280,12 @@ expected, not a bug. See Where it stands.
   there: dispatch the CST816's long-press and swipe gesture IDs, extend `TouchGesture` /
   `GestureEventType`, and route `PEBBLE_GESTURE_EVENT` to a new `watchface_handle_gesture_event()`
   from `kernel/event_loop.c` where it currently returns after the backlight wake.
+- **2026-09-01** — Wrote the touch half of feature 1, plus features 2 and 3. All three build
+  clean in CI; none has been on hardware. Notes for whoever picks this up: the four upstream
+  watchface click handlers are `#ifndef CONFIG_STONE`-guarded rather than left unreferenced,
+  because the build is `-Wall -Werror` and an unused static is a failed build, not a warning —
+  the same trap applies to anything else replaced wholesale. `stone_app_list.{c,h}` is excluded
+  from the SDK shell, whose registry has four apps and none of the `APP_ID_*` constants it
+  needs; that would have been a wasted cycle. Swipe directions are corrected twice on purpose,
+  for board axis inversion in the driver and for left-hand mode in the service, because a
+  direction that is not turned with the display reports backwards on a rotated watch.
