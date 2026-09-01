@@ -23,11 +23,20 @@
 #include "shell/normal/quick_launch.h"
 #include "system/passert.h"
 
+#ifdef CONFIG_STONE
+#define NUM_ROWS (NUM_BUTTONS + 3)  // 4 hold buttons + 3 tap buttons (up, down and center)
+#else
 #define NUM_ROWS (NUM_BUTTONS + 2)  // 4 hold buttons + 2 tap buttons (up and down)
+#endif
 
 typedef enum {
   ROW_TAP_UP = 0,
   ROW_TAP_DOWN,
+#ifdef CONFIG_STONE
+  // Sits with the other tap rows rather than at the end of the enum: these values are menu row
+  // indices only, never persisted, so nothing outside this file depends on them.
+  ROW_TAP_SELECT,
+#endif
   ROW_HOLD_UP,
   ROW_HOLD_SELECT,
   ROW_HOLD_DOWN,
@@ -44,6 +53,10 @@ static const char *s_row_titles[NUM_ROWS] = {
   [ROW_TAP_UP]       = i18n_noop("Tap Up"),
   /// Shown in Quick Launch Settings as the title of the tap down button option.
   [ROW_TAP_DOWN]     = i18n_noop("Tap Down"),
+#ifdef CONFIG_STONE
+  /// Shown in Quick Launch Settings as the title of the tap center button option.
+  [ROW_TAP_SELECT]   = i18n_noop("Tap Center"),
+#endif
   /// Shown in Quick Launch Settings as the title of the hold up button quick launch option.
   [ROW_HOLD_UP]      = i18n_noop("Hold Up"),
   /// Shown in Quick Launch Settings as the title of the hold center button quick launch option.
@@ -86,7 +99,15 @@ static void prv_update_app_names(QuickLaunchData *data) {
                           data->app_names[ROW_TAP_UP], APP_NAME_SIZE_BYTES);
   prv_get_subtitle_string(quick_launch_single_click_get_app(BUTTON_ID_DOWN), data,
                           data->app_names[ROW_TAP_DOWN], APP_NAME_SIZE_BYTES);
-  
+#ifdef CONFIG_STONE
+  // Reads "Disabled" until it is assigned, which is accurate: an unassigned Select tap falls
+  // through to opening the launcher, the same as before.
+  prv_get_subtitle_string(quick_launch_single_click_is_enabled(BUTTON_ID_SELECT)
+                              ? quick_launch_single_click_get_app(BUTTON_ID_SELECT)
+                              : INSTALL_ID_INVALID,
+                          data, data->app_names[ROW_TAP_SELECT], APP_NAME_SIZE_BYTES);
+#endif
+
   // Hold buttons
   prv_get_subtitle_string(quick_launch_get_app(BUTTON_ID_UP), data,
                           data->app_names[ROW_HOLD_UP], APP_NAME_SIZE_BYTES);
@@ -138,6 +159,12 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
       button = BUTTON_ID_DOWN;
       is_tap = true;
       break;
+#ifdef CONFIG_STONE
+    case ROW_TAP_SELECT:
+      button = BUTTON_ID_SELECT;
+      is_tap = true;
+      break;
+#endif
     case ROW_HOLD_UP:
       button = BUTTON_ID_UP;
       is_tap = false;

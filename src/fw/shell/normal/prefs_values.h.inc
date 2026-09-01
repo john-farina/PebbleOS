@@ -32,6 +32,9 @@
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_BACK, s_quick_launch_back)
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_UP, s_quick_launch_single_click_up)
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_DOWN, s_quick_launch_single_click_down)
+#ifdef CONFIG_STONE
+  PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_SELECT, s_quick_launch_single_click_select)
+#endif
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_COMBO_BACK_UP, s_quick_launch_combo_back_up)
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_COMBO_UP_DOWN, s_quick_launch_combo_up_down)
   PREFS_MACRO(PREF_KEY_QUICK_LAUNCH_SETUP_OPENED, s_quick_launch_setup_opened)

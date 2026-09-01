@@ -216,6 +216,9 @@ static QuickLaunchPreference s_quick_launch_back = {
 
 #define PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_UP "qlSingleClickUp"
 #define PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_DOWN "qlSingleClickDown"
+#ifdef CONFIG_STONE
+#define PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_SELECT "qlSingleClickSelect"
+#endif
 #define PREF_KEY_QUICK_LAUNCH_COMBO_BACK_UP "qlComboBackUp"
 #define PREF_KEY_QUICK_LAUNCH_COMBO_UP_DOWN "qlComboUpDown"
 
@@ -228,6 +231,16 @@ static QuickLaunchPreference s_quick_launch_single_click_down = {
   .enabled = true,
   .uuid = TIMELINE_UUID_INIT,
 };
+
+#ifdef CONFIG_STONE
+// Disabled by default so a Select tap keeps opening the launcher; the watchface falls back to it
+// when this is unset. Assigning an app here is what makes the middle button configurable for a
+// tap, which it already is for a hold.
+static QuickLaunchPreference s_quick_launch_single_click_select = {
+  .enabled = false,
+  .uuid = UUID_INVALID_INIT,
+};
+#endif
 
 static QuickLaunchPreference s_quick_launch_combo_back_up = {
   .enabled = false,
@@ -616,6 +629,14 @@ static bool prv_set_s_quick_launch_single_click_down(QuickLaunchPreference *pref
   s_quick_launch_single_click_down = *pref;
   return true;
 }
+
+#ifdef CONFIG_STONE
+static bool prv_set_s_quick_launch_single_click_select(QuickLaunchPreference *pref) {
+  prv_normalize_quick_launch_pref(pref);
+  s_quick_launch_single_click_select = *pref;
+  return true;
+}
+#endif
 
 static bool prv_set_s_quick_launch_combo_back_up(QuickLaunchPreference *pref) {
   prv_normalize_quick_launch_pref(pref);
@@ -1626,7 +1647,12 @@ bool quick_launch_single_click_is_enabled(ButtonId button) {
         return s_quick_launch_single_click_up.enabled;
       case BUTTON_ID_DOWN:
         return s_quick_launch_single_click_down.enabled;
+#ifdef CONFIG_STONE
       case BUTTON_ID_SELECT:
+        return s_quick_launch_single_click_select.enabled;
+#else
+      case BUTTON_ID_SELECT:
+#endif
       case BUTTON_ID_BACK:
       case NUM_BUTTONS:
         break;
@@ -1643,6 +1669,11 @@ AppInstallId quick_launch_single_click_get_app(ButtonId button) {
     case BUTTON_ID_DOWN:
       uuid = &s_quick_launch_single_click_down.uuid;
       break;
+#ifdef CONFIG_STONE
+    case BUTTON_ID_SELECT:
+      uuid = &s_quick_launch_single_click_select.uuid;
+      break;
+#endif
     default:
       PBL_ASSERTN(0); // Should not reach here: invalid button id
       break;
@@ -1664,6 +1695,11 @@ void quick_launch_single_click_set_app(ButtonId button, AppInstallId app_id) {
     case BUTTON_ID_DOWN:
       key = PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_DOWN;
       break;
+#ifdef CONFIG_STONE
+    case BUTTON_ID_SELECT:
+      key = PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_SELECT;
+      break;
+#endif
     default:
       PBL_ASSERTN(0); // Should not reach here: invalid button id
       break;
@@ -1684,6 +1720,12 @@ void quick_launch_single_click_set_enabled(ButtonId button, bool enabled) {
       pref = s_quick_launch_single_click_down;
       key = PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_DOWN;
       break;
+#ifdef CONFIG_STONE
+    case BUTTON_ID_SELECT:
+      pref = s_quick_launch_single_click_select;
+      key = PREF_KEY_QUICK_LAUNCH_SINGLE_CLICK_SELECT;
+      break;
+#endif
     default:
       PBL_ASSERTN(0); // Should not reach here: invalid button id
       break;
