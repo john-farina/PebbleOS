@@ -16,6 +16,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from upstream_base import pebbleos_base
+
 
 def _git(*args, default=""):
     try:
@@ -64,9 +66,9 @@ def main():
         # serve needs to know which build it is handing out.
         "commit": _git("rev-parse", "HEAD", default="unknown"),
         "commit_short": _git("rev-parse", "--short=7", "HEAD", default="unknown"),
-        "base": _git(
-            "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", default="unknown"
-        ),
+        # Not a plain `git describe`: see upstream_base. This job has no floor tag, so the
+        # naive form lands on a safe-build tag and publishes v4.35.0-safe2 as the release.
+        "base": pebbleos_base(),
         "bundle": pbz.name,
         "size": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),

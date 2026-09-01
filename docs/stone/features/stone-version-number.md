@@ -80,7 +80,16 @@ Settings → Stone renders the two new rows is the one outstanding task.
 
   The floor is excluded by name, from `STONE_VERSION_FLOOR` — a workflow-level `env:` in
   `stone-build.yml`, inherited by every step and passed through `cmake -E env`, so the constant
-  is not duplicated and **no workflow edit was needed**.
+  is not duplicated and **no workflow edit was needed**. Confirmed against a real CI build by
+  pulling the artifact: `strings` on the slot0 ELF shows `v4.36.0`.
+- **The same expression lived in `make_manifest.py`, and gave a *different* wrong answer.** The
+  manifest is what the channel publishes and what the companion app shows on the update card,
+  and a real build published `base: v4.35.0-safe2`. The floor tag is created inside the `build`
+  job and never exists in the `bundle` job, so the firmware was picking up the floor while the
+  manifest picked up the safe tag — two wrong answers from one copied line. Both now call
+  `tools/stone/upstream_base.py`, which exists precisely so there is one answer, with
+  `test_upstream_base.py` covering the floor, safe tags, both together, and the no-tags
+  fallback.
 - **The old "Upstream" row became "PebbleOS".** Same value (`STONE_BASE`), clearer name — John
   asked for "the real pebbleOS that its running underneath", and "Upstream" does not say that to
   someone reading it on a wrist. It also moved up to sit directly under the Stone row, because
@@ -129,3 +138,8 @@ To check a bump works: edit `VERSION.stone` to `0.2.0`, rebuild, and the Stone r
   `build_info.py` with and without `STONE_VERSION_FLOOR` set. Worth knowing: that env var is a
   workflow-level `env:` and reaches the generator through `cmake -E env` without any workflow
   change, which is the only reason this did not need one.
+- **2026-09-01** — Pulled the CI artifact to check the fix rather than trusting the local run:
+  the slot0 ELF contains `v4.36.0`, so `STONE_VERSION_FLOOR` does reach `build_info.py` through
+  `cmake -E env`. The same artifact's `manifest.json` said `base: v4.35.0-safe2`, which found
+  the second half of the bug — `make_manifest.py` had the same copied expression and, running in
+  a job with no floor tag, failed differently. Both now share `upstream_base.py` with tests.
