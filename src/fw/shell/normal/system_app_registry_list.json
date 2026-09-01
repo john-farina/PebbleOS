@@ -681,6 +681,14 @@
       "ifdefs": [
         "CONFIG_STONE"
       ]
+    },
+    {
+      "id": -102,
+      "enum": "STONE",
+      "md_fn": "stone_app_get_app_info",
+      "ifdefs": [
+        "CONFIG_STONE"
+      ]
     }
   ],
   "resource_apps": [

@@ -40,6 +40,11 @@ static const struct {
   AppInstallId install_id;
   bool move_on_activity;
 } s_override_table[] = {
+#ifdef APP_ID_STONE
+  // First, always. It answers "which build is this?", which on a fork with
+  // several WIP builds in flight is the question asked before every other one.
+  { APP_ID_STONE, false },
+#endif
   { APP_ID_SPORTS, false },
   { APP_ID_GOLF, false },
 #ifdef APP_ID_WORKOUT

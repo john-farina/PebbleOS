@@ -28,9 +28,24 @@ typedef enum {
   SettingsMenuItemSystem,
 #ifdef CONFIG_STONE
   SettingsMenuItemStoneApps,
-  SettingsMenuItemStone,
 #endif
+
+  //! Categories before this are rows in the Settings list. Anything at or
+  //! after it is still a category -- it has a submodule, a title and a window
+  //! -- but is reached from somewhere else.
+  SettingsMenuItem_ListedCount,
+
+#ifdef CONFIG_STONE
+  //! Which build is on the watch is the first thing you want when several WIP
+  //! builds are in flight, so it is an app at the top of the app list rather
+  //! than five rows down inside Settings. It stays a category because that is
+  //! what lets the app push it with settings_menu_push() and draw it with the
+  //! settings window, instead of growing a second list implementation.
+  SettingsMenuItemStone = SettingsMenuItem_ListedCount,
   SettingsMenuItem_Count,
+#else
+  SettingsMenuItem_Count = SettingsMenuItem_ListedCount,
+#endif
   SettingsMenuItem_Invalid
 } SettingsMenuItem;
 

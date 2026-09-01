@@ -9,6 +9,9 @@
 #include "app_glance_music.h"
 #include "app_glance_notifications.h"
 #include "app_glance_settings.h"
+#ifdef CONFIG_STONE
+#include "app_glance_stone.h"
+#endif
 #include "app_glance_watchfaces.h"
 #include "app_glance_weather.h"
 #include "app_glance_workout.h"
@@ -207,6 +210,13 @@ static LauncherAppGlance *prv_load_glance_for_node(const AppMenuNode *node,
                0x9d, 0x42, 0x35, 0xbf, 0x47, 0xca, 0xad, 0xfe},
       .constructor = launcher_app_glance_settings_create,
     },
+#ifdef CONFIG_STONE
+    { // Stone
+      .uuid = {0x3b, 0x7c, 0x1d, 0x90, 0x5a, 0x24, 0x4e, 0x6f,
+               0x8b, 0x03, 0x9d, 0x41, 0xc7, 0xe2, 0xf0, 0x85},
+      .constructor = launcher_app_glance_stone_create,
+    },
+#endif
     { // Music
       .uuid = {0x1f, 0x03, 0x29, 0x3d, 0x47, 0xaf, 0x4f, 0x28,
                0xb9, 0x60, 0xf2, 0xb0, 0x2a, 0x6d, 0xd7, 0x57},

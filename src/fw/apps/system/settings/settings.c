@@ -73,7 +73,8 @@ static void prv_pref_change_handler(PebbleEvent *event, void *context) {
 
 static uint16_t prv_get_num_rows_callback(MenuLayer *menu_layer,
                                           uint16_t section_index, void *context) {
-  return SettingsMenuItem_Count;
+  // Not _Count: categories past _ListedCount are reachable but not listed here.
+  return SettingsMenuItem_ListedCount;
 }
 
 static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer,
