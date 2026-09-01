@@ -50,6 +50,15 @@ On conflict it captures the offending patch and the conflicting files **before**
 `git rebase --abort`, leaves `stone` untouched, and files a single issue labelled
 `stone-sync` — reusing the open one rather than filing a fresh one nightly.
 
+The `notes` job runs only on `feat/**` and fails a branch with no
+`docs/stone/features/<slug>.md`. That is deliberate rather than a nicety: the
+notes file is the only handoff between sessions that do not remember each
+other, and a convention living only in documentation decays. It also warns —
+without failing — when the file has not been touched since it was created,
+which is the failure mode that actually happens.
+
+See {doc}`features`.
+
 ### stone-cleanup.yml
 
 Retires the channel behind a `feat/*` branch once that branch is gone or its

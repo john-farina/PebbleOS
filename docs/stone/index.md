@@ -19,6 +19,7 @@ upstream syncs get scary and stop happening.
 
 ci
 firmware
+features
 channels
 recovery
 roadmap
@@ -28,6 +29,7 @@ roadmap
 | --- | --- |
 | {doc}`ci` | The workflows: what runs when, how to trigger them, and the CI gates |
 | {doc}`firmware` | What the fork changes in the firmware, and how to add more |
+| {doc}`features` | How to work on a feature here, and the notes file every branch carries |
 | {doc}`channels` | Installing a branch on the watch, switching back, and cleaning up |
 | {doc}`recovery` | What survives a bad build, and every way back |
 | {doc}`roadmap` | What is not built yet, and the decisions still open |

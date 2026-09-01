@@ -91,10 +91,33 @@ landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
 | --- | --- |
 | `docs/stone/index.md` | Naming rule, branch model, commit conventions, resolving a sync conflict |
 | `docs/stone/ci.md` | The `stone-*.yml` workflows, the CI gates, and how to reproduce them locally |
+| `docs/stone/features.md` | **How to work on a feature here.** Start here if you are about to build something |
 | `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
 | `docs/stone/channels.md` | Installing a branch on the watch, switching back, retiring one |
 | `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
 | `docs/stone/roadmap.md` | What is not built yet and which decisions are still open |
+
+## Building a feature
+
+**Start the branch with the script, not by hand:**
+
+```shell
+tools/stone/new_feature.py "what you are building"
+```
+
+It branches from `origin/stone` and writes `docs/stone/features/<slug>.md`,
+which every feature branch carries. That file is the handoff: sessions here do
+not remember each other, so what was tried, what broke, and what was decided
+survives only if it is written down as you go — not at the end, which is where
+sessions run out of context.
+
+If you are picking up an existing `feat/*` branch, **read its notes file before
+its diff**, and check that "Where it stands" still matches
+`git log --oneline origin/stone..HEAD`.
+
+Read `docs/stone/features.md` for the rest: the sections and what belongs in
+each, what to verify locally before burning a seven-minute CI cycle, and how
+John installs a branch to test it.
 
 The five things most likely to waste your time:
 

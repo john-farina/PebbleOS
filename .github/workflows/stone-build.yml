@@ -65,6 +65,47 @@ jobs:
         working-directory: tools/stone/channel
         run: npm test
 
+  # A convention that lives only in documentation is a convention that decays.
+  # Sessions working on this fork do not remember each other, so the notes file
+  # is the only handoff there is -- worth a check that takes ten seconds.
+  notes:
+    if: startsWith(github.event.pull_request.head.ref || github.ref_name, 'feat/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the branch carries its feature notes
+        run: |
+          set -euo pipefail
+          branch="${{ github.event.pull_request.head.ref || github.ref_name }}"
+          notes="docs/stone/features/${branch#feat/}.md"
+
+          if [ ! -f "$notes" ]; then
+            echo "::error::${branch} has no ${notes}."
+            echo "Every feature branch carries one -- it is how the next session"
+            echo "picks the work up. Create it with:"
+            echo "  tools/stone/new_feature.py \"<what you are building>\""
+            echo "or copy tools/stone/feature_notes.md.in to ${notes} by hand."
+            exit 1
+          fi
+          echo "found ${notes}"
+
+          # Created and never touched again is the failure mode that actually
+          # happens, so name it -- but a warning, not a gate: a branch can
+          # legitimately be one commit long.
+          # No --depth: checkout above is already a full clone, and fetching
+          # shallow on top of one makes the repo shallow.
+          git fetch --no-tags origin stone
+          commits=$(git rev-list --count FETCH_HEAD..HEAD)
+          touched=$(git rev-list --count FETCH_HEAD..HEAD -- "$notes")
+          echo "commits on this branch: ${commits}, of which touch the notes: ${touched}"
+          if [ "$commits" -gt 2 ] && [ "$touched" -lt 2 ]; then
+            echo "::warning::${notes} has not been updated since it was created," \
+                 "after ${commits} commits. Update it as you go, not at the end --" \
+                 "the end is where a session runs out of context."
+          fi
+
   build:
     needs: changes
     if: needs.changes.outputs.should-build == 'true'
