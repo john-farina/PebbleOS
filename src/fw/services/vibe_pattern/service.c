@@ -253,7 +253,18 @@ static void prv_vibes_set_vibe_strength(int32_t new_strength) {
 
   if (new_strength != VIBE_STRENGTH_OFF) {
     vibe_set_strength(new_strength);
+#ifdef CONFIG_STONE
+    // Stepping between two non-zero amplitudes is a gain change, not a new pulse. vibe_ctl(true)
+    // reconfigures the driver and re-issues the play command, which restarts the RAM waveform
+    // from its first sample -- so a shaped envelope came out as one restart per segment instead
+    // of one continuous swell, and each restart spent part of its segment on the motor's
+    // start-up transient. The waveform is an infinite hardware loop, so it is still playing.
+    if (s_vibe_strength == VIBE_STRENGTH_OFF) {
+      vibe_ctl(true /* on */);
+    }
+#else
     vibe_ctl(true /* on */);
+#endif
     s_last_vibe_active_tick = rtc_get_ticks();
     if (s_vibe_strength == VIBE_STRENGTH_OFF) {
       // Transitioning from off to on
