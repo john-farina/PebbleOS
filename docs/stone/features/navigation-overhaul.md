@@ -130,6 +130,20 @@ comment *"Touch is reserved for watchapps; watchfaces must not consume it."* Tha
 for apps and is unchanged; the shell gets gestures from the kernel event loop instead, exactly as
 it already gets buttons.
 
+## Build for obelix locally, not just qemu_emery
+
+`./pbl configure --board=obelix@pvt && ./pbl build` works with the SDK toolchain and takes a
+couple of minutes. **Do this before pushing anything board-specific**, because `qemu_emery` is
+not a superset of obelix and a green local build proves less than it looks.
+
+This cost a CI cycle: `boards/qemu_emery/defconfig` has **no `CONFIG_VIBE`**, so the entire
+haptics implementation compiled to its no-op stub locally while the real code was never built at
+all. CI compiled it for obelix and rejected `haptic < 0` on an unsigned enum
+(`-Werror=type-limits`) — a fault that had been sitting in a file that "built clean" three times.
+
+Anything behind a board-gated Kconfig has the same hazard. `CONFIG_TOUCH` and `CONFIG_VIBE` are
+both obelix-only among the boards worth testing.
+
 ## The simulator cannot test any of this
 
 Recorded prominently because two sessions have now tried.

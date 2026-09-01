@@ -27,6 +27,8 @@
 #include "pbl/util/size.h"
 #include "syscall/syscall.h"
 
+#include <stddef.h>
+
 //! Long enough to clear a tick plus the driver's stop latency, so a throttled tick is one the
 //! wearer would not have felt anyway. Short enough that deliberate swipes each get their own.
 #define MIN_TICK_INTERVAL_MS (100)
@@ -64,7 +66,9 @@ bool stone_haptics_would_play(void) {
 }
 
 void stone_haptics_play(StoneHaptic haptic) {
-  if ((haptic < 0) || (haptic >= (StoneHaptic)ARRAY_LENGTH(s_specs))) {
+  // No lower-bound check: every enumerator is non-negative, so the compiler gives StoneHaptic an
+  // unsigned type and `haptic < 0` is a -Wtype-limits error under -Werror.
+  if ((size_t)haptic >= ARRAY_LENGTH(s_specs)) {
     return;
   }
   if (prv_throttled(haptic)) {
