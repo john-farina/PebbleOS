@@ -146,7 +146,12 @@ jobs:
             echo ""
             echo "- retired: ${retired}"
             echo "- kept: ${kept}"
-            [ "$DRY_RUN" = "true" ] && echo "- dry run: nothing was changed"
+            # An `if` rather than `[ ... ] && echo`, because this is the last
+            # command in the group: under `bash -e` a false test would make the
+            # group exit 1 and fail the step on every non-dry run.
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "- dry run: nothing was changed"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Explain why nothing ran
