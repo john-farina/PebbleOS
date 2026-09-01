@@ -4,29 +4,23 @@ The firmware and CI halves are done. What remains is blocked on decisions or
 credentials rather than on work, and this page exists so none of it gets
 re-derived from scratch.
 
-## Blocked on a Cloudflare account
+## Blocked on a deploy
 
-### Deploying the channel server
+### The channel server
 
-The server is written and tested — `tools/stone/channel/`, 28 cases, no
-wrangler and no network needed to run them. What is left is one deploy:
+The server is written and tested — `tools/stone/channel/`, 39 cases, no network
+needed to run them. It runs on Railway (a Node process and a volume) or on
+Cloudflare Workers (a Worker and a KV namespace) from the same source; the
+routing is one host-agnostic `fetch` handler and the host adapters are about
+200 lines.
 
-```shell
-cd tools/stone/channel
-npx wrangler kv namespace create STONE     # paste the id into wrangler.toml
-npx wrangler secret put STONE_PUBLISH_TOKEN
-npx wrangler secret put STONE_CONTROL_TOKEN
-npx wrangler deploy
-```
+Whichever it is, it needs two variables — `STONE_PUBLISH_TOKEN` and
+`STONE_CONTROL_TOKEN` — and then `STONE_CHANNEL_URL` plus `STONE_PUBLISH_TOKEN`
+added to this repository's secrets. Until both repository secrets exist, CI
+skips publishing and the bundle is still an artifact you can sideload by hand.
 
-Then add `STONE_CHANNEL_URL` and `STONE_PUBLISH_TOKEN` to this repository's
-secrets. Until both exist CI skips publishing and the bundle is still an
-artifact you can sideload by hand.
-
-The workload — one phone polling a few times an hour — sits inside Cloudflare's
-free tier with several orders of magnitude to spare, and bundles live in the
-same KV namespace rather than in release assets, so there is nothing else to
-pay for or set up. See `tools/stone/channel/README.md` for why.
+See `tools/stone/channel/README.md` for the deploy steps and for why bundles
+live in the same store as the metadata rather than in release assets.
 
 ## Blocked on Apple credentials
 
