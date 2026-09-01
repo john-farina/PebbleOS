@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | Features 1–3 written and building. Carousel not started |
+| **Status** | Features 1–3 built and partly verified in the simulator. Carousel not started |
 
 ## What this is
 
@@ -58,9 +58,38 @@ Four separable features:
 
 ## Where it stands
 
-**Features 1, 2 and 3 are written and compile in CI. None of them has been on a wrist yet** --
-there is no ARM toolchain here, so CI is the only check that has run. Feature 4, the watchface
-carousel, is not started.
+**Features 1, 2 and 3 build and were partly verified in `qemu_emery`.** None has been on real
+hardware. Feature 4, the watchface carousel, is not started.
+
+Verified by screenshot in the simulator:
+
+- BACK on the watchface opens the app list, and BACK again returns to the watchface. The
+  top-level toggle works in both directions.
+- Golf is gone from the app list, which now ends: Settings, Music, Notifications, Alarms,
+  Watchfaces, Workout, Health, Timeline.
+- **Settings → Apps** exists, between System and Stone, and lists the main apps.
+
+Not yet verified, and the first thing to do next: **grab-and-move reordering**, whether the
+order survives a reboot, and the "Not in the list" heading with Golf under it. Testing stopped
+because John started the simulator in his own clone and `./sim` pkills every `qemu-pebble`
+process, so two of us cannot drive it at once.
+
+Two pieces of tooling bit here and will bite the next session:
+
+- **`./sim boot` exits 1, silently, on a fresh worktree.** `configured_board()` greps
+  `build/c4che/_cache.py`, a waf artifact that a CMake build never writes; under `set -o
+  pipefail` the failing `sed` makes the assignment fail and `set -e` exits with no message. Work
+  around it with `source ~/pebbleos-sdk-*/env.sh && source .venv/bin/activate && ./pbl configure
+  --board=qemu_emery && ./pbl build && ./pbl qemu`.
+- **`./pbl qemu` in a worktree puts its monitor socket in the *main clone's* `build/`**, not the
+  worktree's, presumably from the shared git common dir. So the socket is at
+  `~/repos/PebbleOS/build/qemu-mon.sock` even when the firmware being run is the worktree's.
+
+Neither belongs on this branch; they are `./sim`'s own bugs.
+
+**The "there is no ARM toolchain here" rule is out of date.** The SDK at `~/pebbleos-sdk-*`
+ships `arm-none-eabi-gcc`, and a full firmware build takes a couple of minutes locally. Compile
+before pushing; CI is no longer the only compiler.
 
 | Commit | What |
 | --- | --- |
