@@ -92,6 +92,7 @@ landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
 | `docs/stone/index.md` | Naming rule, branch model, commit conventions, resolving a sync conflict |
 | `docs/stone/ci.md` | The `stone-*.yml` workflows, the CI gates, and how to reproduce them locally |
 | `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
+| `docs/stone/channels.md` | Installing a branch on the watch, switching back, retiring one |
 | `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
 | `docs/stone/roadmap.md` | What is not built yet and which decisions are still open |
 
@@ -109,3 +110,10 @@ The five things most likely to waste your time:
   the compiler and each cycle is ~7 minutes. Verify statically first.
 - **`gitlint` installs as `gitlint-core`** (plain `gitlint` fails to build), and
   its default rules reject the word "WIP" in a commit title.
+- **Boot priority is stamped at build time, not install time.** Installing an
+  older build does not make it boot; re-stamp it first with
+  `tools/stone/restamp_priority.py`. See `docs/stone/recovery.md`.
+
+The channel server is `tools/stone/channel/` — one Cloudflare Worker, no
+dependencies, `npm test` runs its 28 cases with no network. Its README explains
+why bundles live in KV rather than in release assets.
