@@ -44,6 +44,9 @@
 #include "syscall/syscall_internal.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+#include "apps/system/stone_face_thumb.h"
+#endif
 #include "pbl/util/math.h"
 
 // FreeRTOS stuff
@@ -549,6 +552,13 @@ static bool prv_app_switch(bool gracefully) {
   }
 
   AppInstallId old_install_id = s_app_task_context.install_id;
+
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+  // The one moment a watchface can be photographed. The system framebuffer still holds its last
+  // composited frame -- the incoming app's first render is what clears it -- and this is
+  // KernelMain, so reading it cannot race a composite. See stone_face_thumb.h.
+  stone_face_thumb_capture(old_install_id);
+#endif
 
   // Kill the current app
   prv_app_cleanup();
