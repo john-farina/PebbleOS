@@ -80,10 +80,10 @@ Confirm it on hardware — install two builds in the wrong order and read
 Settings → Stone — before relying on it.
 ```
 
-## Why Stone versions start at 999
+## Why Stone versions start at 200
 
-Stone builds are tagged from `v999.0.0.1`, so `git describe` on `stone` yields
-`v999.0.0.1-<n>-g<sha>` and the companion app parses the version as `999.0.0`.
+Stone builds are tagged from `v200.0.0.1`, so `git describe` on `stone` yields
+`v200.0.0.1-<n>-g<sha>` and the companion app parses the version as `200.0.0`.
 
 This is not vanity. It is load-bearing.
 
@@ -102,6 +102,17 @@ wrist. Every main-derived build would be a downgrade forever.
 So the fork carries its own version floor, chosen high enough to never be
 overtaken. The fourth component is ours to bump.
 
+**Why 200 and not 999.** `GIT_MAJOR_VERSION` / `MINOR` / `PATCH` are assigned
+into `WatchInfoVersion` in `applib/app_watch_info.c`, and all three fields are
+`uint8_t`. Anything over 255 is a hard build failure, not a silent wrap:
+
+```
+git_version.auto.h:5: error: unsigned conversion from 'int' to 'unsigned char'
+changes value from '999' to '231' [-Werror=overflow]
+```
+
+200 clears everything Core will ship and still leaves headroom under the cap.
+
 ```{warning}
 **The tag must stay reachable from `stone`.** The nightly sync rebases the patch
 queue, and a tag left on a rebased-away commit stops being an ancestor —
@@ -111,7 +122,7 @@ becomes a downgrade again, with no error anywhere to say so.
 After a sync that rewrites the queue, check it:
 
 ```shell
-git describe --tags stone      # must start with v999.
+git describe --tags stone      # must start with v200.
 ```
 
 Re-tag if it does not. `main` must **not** carry this tag — Safe Builds are
