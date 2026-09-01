@@ -16,8 +16,18 @@ full rebuild each time.
 
 import argparse
 import os
+import pathlib
 import subprocess
 import sys
+
+# Stone's own version, independent of the upstream release underneath it.
+#
+# Deliberately a file rather than a git tag. Every tag reachable from `stone` is read by
+# `git describe`, and three separate parsers depend on the shape of what comes back --
+# tools/gitinfo.py raises on a tag it cannot parse and fails the build, tools/pblboot.py sorts
+# release and dev bands by it, and the companion app orders updates on it. A `stone-0.1.0` tag
+# would therefore break every later build. See docs/stone/firmware.md.
+VERSION_FILE = "VERSION.stone"
 
 
 def _git(*args, default=""):
@@ -47,6 +57,17 @@ def branch():
     return _git("rev-parse", "--short", "HEAD", default="unknown")
 
 
+def stone_version():
+    """Stone's own version, from VERSION.stone at the repo root."""
+    try:
+        text = (pathlib.Path(__file__).resolve().parents[2] / VERSION_FILE).read_text()
+    except OSError:
+        # Missing or unreadable: fall back rather than failing a build over build metadata,
+        # which is how every other field here behaves.
+        return "unknown"
+    return text.strip() or "unknown"
+
+
 def c_string(value, limit):
     """Escape for a C string literal and clamp to what the UI can show."""
     value = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -61,6 +82,7 @@ def main():
 
     dirty = bool(_git("status", "--porcelain", "--untracked-files=no"))
     fields = {
+        "STONE_VERSION": c_string(stone_version(), 15),
         "STONE_BRANCH": c_string(branch(), 31),
         "STONE_COMMIT": c_string(
             _git("rev-parse", "--short=7", "HEAD", default="unknown"), 15

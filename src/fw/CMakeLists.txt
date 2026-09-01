@@ -30,6 +30,7 @@ add_custom_command(
           --template ${CMAKE_CURRENT_SOURCE_DIR}/stone_build_info.auto.h.in
           --output ${stone_build_info}
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/stone_build_info.auto.h.in
+          ${PBL_BASE}/VERSION.stone
   WORKING_DIRECTORY ${PBL_BASE}
   COMMENT "Checking the Stone build info"
   VERBATIM

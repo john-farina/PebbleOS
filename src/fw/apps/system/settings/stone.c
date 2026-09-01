@@ -23,9 +23,10 @@
 #include <string.h>
 
 typedef enum {
-  StoneMenuItemBranch = 0,
+  StoneMenuItemVersion = 0,
+  StoneMenuItemPebbleOS,
+  StoneMenuItemBranch,
   StoneMenuItemCommit,
-  StoneMenuItemUpstream,
   StoneMenuItemFirmware,
   StoneMenuItemSlot,
   StoneMenuItem_Count,
@@ -54,6 +55,16 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx, const Lay
   const char *subtitle = NULL;
 
   switch ((StoneMenuItem)row) {
+    case StoneMenuItemVersion:
+      /// Settings > Stone: Stone's own version, independent of the PebbleOS release underneath.
+      title = i18n_noop("Stone");
+      subtitle = STONE_VERSION;
+      break;
+    case StoneMenuItemPebbleOS:
+      /// Settings > Stone: the PebbleOS release this Stone build runs on top of.
+      title = i18n_noop("PebbleOS");
+      subtitle = STONE_BASE;
+      break;
     case StoneMenuItemBranch:
       /// Settings > Stone: the branch this firmware was built from.
       title = i18n_noop("Branch");
@@ -63,11 +74,6 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx, const Lay
       /// Settings > Stone: the commit this firmware was built from.
       title = i18n_noop("Commit");
       subtitle = STONE_COMMIT;
-      break;
-    case StoneMenuItemUpstream:
-      /// Settings > Stone: the upstream release this fork is based on.
-      title = i18n_noop("Upstream");
-      subtitle = STONE_BASE;
       break;
     case StoneMenuItemFirmware:
       /// Settings > Stone: the full firmware version string.
