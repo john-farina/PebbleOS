@@ -20,6 +20,23 @@ add_custom_command(
 add_custom_target(pbl_git_version DEPENDS ${git_version})
 add_dependencies(pbl_generated_headers pbl_git_version)
 
+# Stone records the branch a build came from. `git describe` does not, and the
+# on-watch version field is too small to carry one, so without this an
+# installed build cannot say which branch it is.
+set(stone_build_info ${CMAKE_CURRENT_BINARY_DIR}/stone_build_info.auto.h)
+add_custom_command(
+  OUTPUT ${stone_build_info} ${CMAKE_CURRENT_BINARY_DIR}/stone_build_info.stamp
+  COMMAND ${PBL_TOOLCHAIN_ENV} ${PYTHON_EXECUTABLE} ${PBL_BASE}/tools/stone/build_info.py
+          --template ${CMAKE_CURRENT_SOURCE_DIR}/stone_build_info.auto.h.in
+          --output ${stone_build_info}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/stone_build_info.auto.h.in
+  WORKING_DIRECTORY ${PBL_BASE}
+  COMMENT "Checking the Stone build info"
+  VERBATIM
+)
+add_custom_target(pbl_stone_build_info DEPENDS ${stone_build_info})
+add_dependencies(pbl_generated_headers pbl_stone_build_info)
+
 add_subdirectory(startup)
 add_subdirectory(drivers)
 add_subdirectory(board)

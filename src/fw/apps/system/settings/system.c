@@ -22,6 +22,9 @@
 #include "kernel/ui/modals/modal_manager.h"
 #include "kernel/util/sleep.h"
 #include "mfg/mfg_info.h"
+#ifdef CONFIG_STONE
+#include "stone_build_info.auto.h"
+#endif
 #include "mfg/mfg_serials.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/bluetooth/local_id.h"
@@ -48,6 +51,9 @@
 enum {
   SystemInformationItemBtAddress = 0,
   SystemInformationItemFirmware,
+#ifdef CONFIG_STONE
+  SystemInformationItemStoneBranch,
+#endif
   SystemInformationItemLanguage,
   SystemInformationItemRecovery,
   SystemInformationItemBootloader,
@@ -123,6 +129,9 @@ typedef struct SystemInformationData {
   char uptime_string[16]; // "xxd xxh xxm xxs"
   char const * subtitle_text[SystemInformationItem_Count];
   char language_string[16];
+#ifdef CONFIG_STONE
+  char stone_branch_string[40];
+#endif
 } SystemInformationData;
 
 typedef struct SettingsSystemData {
@@ -201,6 +210,9 @@ static ConfirmationDialog *prv_settings_confirm(const char *title, const char *t
 static const char* s_information_titles[SystemInformationItem_Count] = {
   [SystemInformationItemBtAddress] = i18n_noop("BT Address"),
   [SystemInformationItemFirmware] = i18n_noop("Firmware"),
+#ifdef CONFIG_STONE
+  [SystemInformationItemStoneBranch] = i18n_noop("Branch"),
+#endif
   [SystemInformationItemLanguage] = i18n_noop("Language"),
   [SystemInformationItemRecovery] = i18n_noop("Recovery"),
   [SystemInformationItemBootloader] = i18n_noop("Bootloader"),
@@ -307,6 +319,13 @@ static void prv_information_window_push(SettingsSystemData *data) {
     (char*) (strlen(TINTIN_METADATA.version_tag) >= 2
              ? TINTIN_METADATA.version_tag : TINTIN_METADATA.version_short);
   info->subtitle_text[SystemInformationItemLanguage]   = info->language_string;
+#ifdef CONFIG_STONE
+  // git describe carries the tag and commit but not the branch, and version_tag
+  // has no room for one — so this is the only place the branch is visible.
+  sniprintf(info->stone_branch_string, sizeof(info->stone_branch_string), "%s%s",
+            STONE_BRANCH, STONE_DIRTY ? " (dirty)" : "");
+  info->subtitle_text[SystemInformationItemStoneBranch] = info->stone_branch_string;
+#endif
   info->subtitle_text[SystemInformationItemRecovery]   = info->recovery_version_string;
   info->subtitle_text[SystemInformationItemBootloader] = info->boot_version_string;
   info->subtitle_text[SystemInformationItemHardware]   = info->hw_version_string;
