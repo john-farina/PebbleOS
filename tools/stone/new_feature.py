@@ -113,7 +113,11 @@ def main():
         sys.exit("working tree is not clean; commit or stash first")
 
     git("fetch", "origin", BASE, capture=False)
-    git("switch", "-c", branch, args.base, capture=False)
+    # --no-track: branching from origin/stone otherwise sets the new branch's
+    # upstream to stone, so a bare `git push` aims at the shared branch. Git's
+    # default push.default=simple refuses when the names differ, but relying on
+    # that to stop a push to `stone` is not a design.
+    git("switch", "--no-track", "-c", branch, args.base, capture=False)
 
     (REPO / notes).parent.mkdir(parents=True, exist_ok=True)
     (REPO / notes).write_text(body)

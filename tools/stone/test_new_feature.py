@@ -117,6 +117,20 @@ class AgainstARealRepo(unittest.TestCase):
         # Nothing left behind: the commit is the only change.
         self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
 
+    def test_does_not_point_the_new_branch_at_stone(self):
+        # Branching from origin/stone would otherwise set the upstream to
+        # stone, aiming a bare `git push` at the shared branch.
+        self.run_script("thing")
+        upstream = self.git(
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+            check=False,
+        )
+        self.assertNotEqual(upstream.stdout.strip(), "origin/stone")
+        self.assertNotEqual(upstream.returncode, 0, "expected no upstream at all")
+
     def test_refuses_a_branch_that_already_exists(self):
         self.run_script("thing")
         # Back on stone the notes file is gone from the working tree, so this
