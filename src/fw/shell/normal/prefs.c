@@ -11,6 +11,9 @@
 
 #include "apps/system/timeline/timeline.h"
 #include "apps/system/toggle/quiet_time.h"
+#ifdef CONFIG_STONE
+#include "apps/system/stone_face_picker.h"
+#endif
 #include "board/board.h"
 #include "applib/graphics/gtypes.h"
 #include <pbl/drivers/ambient_light.h>
@@ -204,10 +207,20 @@ static QuickLaunchPreference s_quick_launch_down = {
   .uuid = UUID_INVALID_INIT,
 };
 
+#ifdef CONFIG_STONE
+// Holding the middle button opens the watchface picker, the button equivalent of holding a
+// finger on the face. Still reassignable in Settings > Quick Launch > Hold Center; upstream's
+// default was disabled, which fell through to launching the Quick Launch setup app.
+static QuickLaunchPreference s_quick_launch_select = {
+  .enabled = true,
+  .uuid = STONE_FACE_PICKER_UUID,
+};
+#else
 static QuickLaunchPreference s_quick_launch_select = {
   .enabled = false,
   .uuid = UUID_INVALID_INIT,
 };
+#endif
 
 static QuickLaunchPreference s_quick_launch_back = {
   .enabled = true,

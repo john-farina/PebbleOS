@@ -322,6 +322,13 @@ static void prv_stone_click(ClickRecognizerRef recognizer, void *data) {
 }
 
 #ifdef CONFIG_TOUCH
+static void prv_launch_app(AppInstallId app_id, ButtonId button) {
+  app_manager_put_launch_app_event(&(AppLaunchEventConfig) {
+    .id = app_id,
+    .common.button = button,
+  });
+}
+
 // Swipes take the same meaning they have everywhere else in the firmware, as the touch-nav bridge
 // defines it (applib/ui/recognizer/touch_nav.c): right is Back, left is Select, and the vertical
 // pair follows the content-scroll convention where the finger moves opposite to the content. The
@@ -355,12 +362,14 @@ void watchface_handle_gesture_event(PebbleEvent *e) {
     case GestureEvent_SwipeDown:
       prv_tap_action(BUTTON_ID_UP);
       break;
+    case GestureEvent_LongPress:
+      // The gesture John asked for: hold the face to shrink it into the picker.
+      prv_launch_app(APP_ID_STONE_FACE_PICKER, BUTTON_ID_SELECT);
+      break;
     case GestureEvent_Tap:
     case GestureEvent_DoubleTap:
-    case GestureEvent_LongPress:
-      // Tap and double tap already drive the backlight from the kernel and must not also
-      // navigate, or waking the screen would launch something. Long press is the watchface
-      // carousel's entry gesture and is wired up with the carousel itself.
+      // These already drive the backlight from the kernel and must not also navigate, or
+      // waking the screen would launch something.
       break;
   }
 }
