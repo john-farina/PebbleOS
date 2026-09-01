@@ -82,6 +82,15 @@ Latest build: `v200.0.0.1-47-g7d0cb89ce`. He was on `34ec6f2` for a while, which
 haptics, thumbnails and edge-back — if he reports something missing, **check Settings → Stone →
 Commit before debugging it.**
 
+**2026-09-01: he was still on `34ec6f2`, and reported haptics and previews as broken.** They were
+not broken; they were not installed. `34ec6f2` is seven commits behind the branch head and every
+one of features 5, 6 and 7 lands after it. This is the second time the installed commit has been
+the answer, so it is now the first thing to check and not the last.
+
+Investigating the report anyway found that **two of the three would not have worked on the newest
+build either**, for reasons no amount of wrist testing would have explained. Both are fixed; see
+the 2026-09-01 fixes log entry.
+
 ### The seven pieces, and how sure we are
 
 | # | Feature | State |
@@ -91,9 +100,29 @@ Commit before debugging it.**
 | 2b | Settings → Apps exists, between System and Stone | **Verified in `qemu_emery`** |
 | 3 | Grab-and-move reordering | Compiles. **Never run.** First on-watch writer of `lnc_ord`, and a write failure is silent by design |
 | 4 | Watchface picker (app `-101`) | Compiles. **Never run.** Likeliest failures: the paging animation, and whether opting out of the touch-nav bridge really leaves horizontal swipes to its own recognizers |
-| 5 | Real watchface miniatures | Compiles. **Never run.** Progressive: only faces that have been *worn* have a thumbnail |
-| 6 | Navigation haptics + directional side buttons | Compiles. **Never run**, and cannot be — QEMU has no vibe motor |
-| 7 | Edge-gated back swipe | Compiles. **Never run**, and cannot be — QEMU emits no gestures |
+| 5 | Real watchface miniatures | **Could not have worked as first written** — every store was rejected. Fixed; still never run |
+| 6 | Navigation haptics + directional side buttons | **Light effects were below the motor's floor as first written.** Fixed; still never run, and cannot be — QEMU has no vibe motor |
+| 7 | Edge-gated back swipe | Compiles. **Never run**, and cannot be — QEMU emits no gestures. The recognizer's reliability fixes *are* covered by unit tests |
+
+### Two bugs that a wrist could not have diagnosed
+
+Worth reading before trusting anything else in this file, because both were invisible in exactly
+the way that makes on-watch testing useless:
+
+1. **No thumbnail was ever stored.** A settings record's value length is an 11-bit field, so
+   `SETTINGS_VAL_MAX_LEN` is 2046 bytes. A thumbnail is `(200/3) * (228/3)` = **5016 bytes**, so
+   `settings_file_set()` returned `E_RANGE` for every capture ever attempted — and `prv_store()`
+   discarded the status. The picker then fell back to the icon, which is *exactly what it is
+   supposed to do for a face that has never been worn*. A correct-looking fallback hiding a
+   total failure is why this survived a build, a review and a wrist.
+2. **The light haptics asked the motor for an amplitude it cannot produce.** The envelope scaled
+   the shape between zero and the peak, so a Light effect (peak 25%) opening at 40% of shape
+   asked for 10% — about 12 of 128 gain counts, well under the LRA's starting threshold, for
+   10ms. The first third of every button press was silent, and since all three side buttons are
+   Light, so was much of the directional feel they exist for.
+
+Both are fixed. Neither could have been found by pressing buttons: the first is arithmetic
+against a header constant, the second is arithmetic against the driver's gain register.
 
 ### If you are picking this up cold, read these three first
 
@@ -105,8 +134,10 @@ Commit before debugging it.**
 
 ### What to do next, in order
 
-1. **Wait for John's report on `7d0cb89`.** Most of the risk is in features 3–7 and only a wrist
-   can retire it.
+0. **Make sure John is actually on the branch head.** Settings → Stone → Commit. Every report so
+   far has come from `34ec6f2`, which has none of features 5–7 in it.
+1. **Wait for John's report on the head build.** Most of the risk is in features 3–7 and only a
+   wrist can retire it.
 2. **Haptics will need tuning, not redesign.** Strength, character and motion are three tables in
    `stone_haptics.c`; "too weak" or "the direction doesn't read" are table edits. Resist adding
    per-call-site millisecond values — that is exactly what the vocabulary exists to prevent.
@@ -325,10 +356,16 @@ failure there is silent by design.
 
 24. **Press UP, then SELECT, then DOWN.** They should feel *different* — rising, level, falling.
     If they feel identical, the envelope shaping is not landing, and that is a redesign rather
-    than a retune.
-25. **Swipe right starting from the very left edge** → goes back, with a falling tick.
+    than a retune. If they feel like *nothing*, check that the build contains the floor fix
+    (`PERCEPTIBLE_FLOOR_PCT` in `stone_haptics.c`) before touching the tables.
+25. **Swipe right starting from the left fifth of the screen** → goes back, with a falling tick.
+    The strip is `DISP_COLS / 5`, so 40px of the 200px panel — reachable without aiming.
 26. **Swipe right starting from the middle of the screen** → *nothing should happen.* This half
     is the point of the change; before it, that gesture went back from anywhere.
+26b. **Swipe back in an arc, and slowly, and after resting your finger first.** All three used to
+    fail and should now work; they are the three reliability fixes, and they are the ones John
+    asked for. Each has a unit test, so a failure here means the gesture never reached the
+    recognizer, not that the recognizer rejected it.
 27. **Wear a face, switch to another, then open the picker.** The first face should now show a
     real miniature rather than its icon. A face you have never worn stays an icon — that is
     correct, not a bug.
@@ -390,6 +427,74 @@ mapping from feel to number is what `stone_haptics.c` exists to own.
   `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
   upstream sets the default only on a *successful* launch and writing the pref directly would
   strand the wearer on a face whose fetch failed.
+- **2026-09-01 (fixes)** — John reported haptics and previews as not working, from `34ec6f2`,
+  which contains neither. The build was the whole of that answer. Auditing the head build anyway
+  found that two of the three follow-ups were broken on their own terms, and fixed those plus the
+  swipe reliability he asked about. In order of how badly each was hiding:
+
+  **Thumbnails were never stored** (see "Two bugs a wrist could not have diagnosed"). Fixed by
+  splitting each thumbnail across `STONE_FACE_THUMB_CHUNKS` records of 1024 bytes, with the chunk
+  index in the *key* rather than the value — so a capture interrupted halfway is a missing key and
+  the load fails cleanly, instead of a short read painting garbage over half the picker. A
+  `_Static_assert` now pins the chunk against `SETTINGS_VAL_MAX_LEN`, and both the open and every
+  set are checked and logged. The cache is capped at `THUMB_MAX_FACES` (8), which at ~5KB each is
+  about 1% of the 5MB filesystem; the ninth face keeps its icon and says so in the log.
+
+  **Light haptics were under the motor's starting threshold.** The envelope now spans
+  `PERCEPTIBLE_FLOOR_PCT`..peak rather than 0..peak, so no segment can be asked for an amplitude
+  the LRA will not start at. That alone would have flattened Light (its peak *was* the floor, so
+  the span would be zero and all three side buttons would feel identical — the opposite of the
+  feature), so the peaks moved up to 50/65/85 to leave the envelope somewhere to go. These are
+  still tables; "too strong" is still a table edit.
+
+  **Envelope segments were restarting the waveform.** `prv_vibes_set_vibe_strength()` called
+  `vibe_ctl(true)` on every non-zero step, which reconfigures the driver and re-issues the play
+  command — restarting the RAM waveform from its first sample. A three-segment swell was three
+  restarts, each spending part of its 10ms on the start-up transient. The header comment in
+  `stone_haptics.c` claimed this path was already a bare gain write; it was not, and the claim is
+  now true because the service was changed to match it. **Gated on `CONFIG_STONE`** deliberately:
+  it is shared with alarms and notification vibes, and the reasoning (the RAM waveform is an
+  infinite hardware loop, so skipping the re-GO cannot leave the motor silent) is read from the
+  driver rather than measured. **Worth a specific check on the wrist: do alarms and notification
+  vibes still feel right?** If they do not, that gate is where to look.
+
+  **Swipe-back reliability**, which John reported as bad in upstream's own build too. Three
+  faults in `swipe.c`, all of which reject gestures the wearer plainly meant:
+
+  - The straightness test was a pure ratio applied from 11px of travel, where a few pixels of
+    contact noise are most of the major axis. Twelve pixels across with seven of jitter failed
+    the swipe *permanently*, before it had finished starting. It is now a corridor — half the
+    major axis plus `SWIPE_STRAIGHTNESS_SLACK_PX` — which is also what lets a thumb swipe in the
+    arc a thumb actually travels.
+  - The 300ms budget ran from touchdown, so resting a finger before swiping spent it. It now runs
+    from the first sample that moved more than `SWIPE_MOTION_START_PX`.
+  - A flick lifts off while still moving, so it always measures shorter than a drag of the same
+    intent, and anything under 30px was rejected however fast it was going. The velocity was
+    already being computed and thrown away; it now admits a short path that was moving at
+    `SWIPE_FLING_MIN_VELOCITY_PX_S` at liftoff.
+
+  These are **ungated**, unlike the vibe change. Gating a recognizer fix on `CONFIG_STONE` would
+  put it outside the unit tests, which do not define it — and this is the one part of the branch
+  that *can* be tested off-wrist. `tests/fw/ui/recognizer/test_swipe.c` is now 18 cases and all
+  331 tests in the tree pass. Two existing cases were rewritten rather than deleted: `too_crooked`
+  now uses a path that is genuinely diagonal (40/30) instead of one that was merely starting
+  (20/15), and `length_below_boundary` draws its 29px slowly, so it still pins the distance rule
+  instead of being carried over by the new fling rule.
+
+  **The edge strip went from 20px to `DISP_COLS / 5`** (40px on obelix). iOS can afford 5% because
+  its transition tracks the finger and a miss is visible; here a miss is indistinguishable from
+  the watch ignoring you, which is precisely the complaint.
+
+  One thing deliberately *not* done: `stone_edge_back.c` is still dead code. Nothing instantiates
+  the pan recognizer — only `STONE_EDGE_BACK_WIDTH_PX` is used, by `touch_nav.c`. It stays because
+  the projection maths is the hard part and is ready for whenever the compositor grows an
+  interactive transition, but nobody should read its presence as meaning the edge gesture is
+  pan-driven today. It is a coordinate check on the existing swipe.
+
+  Verified: all six changed files compile for `obelix@pvt` with `CONFIG_STONE`, `CONFIG_VIBE` and
+  `CONFIG_TOUCH` on (the `qemu_emery` trap below), and 331/331 unit tests pass. Nothing here has
+  been on hardware.
+
 - **2026-09-01** — Built the three follow-ups John asked for: navigation haptics, real watchface
   miniatures, and the edge-gated back swipe. All three compile; none has run.
 
