@@ -3,6 +3,14 @@
 
 #include "touch_nav.h"
 
+#ifdef CONFIG_STONE
+#include "stone_edge_back.h"
+
+// Defined below, beside the swipe-to-button mapping it belongs with; declared here
+// because the Tier-1 widget path reaches it first.
+static bool prv_back_swipe_allowed(const TouchNavState *state, SwipeDirection direction);
+#endif
+
 #include "pan.h"
 #include "recognizer.h"
 #include "recognizer_manager.h"
@@ -293,7 +301,12 @@ static void prv_widget_recognizer_event(const Recognizer *recognizer, Recognizer
           }
         } else if (recognizer == state->widget_swipe) {
           const SwipeDirection dir = swipe_recognizer_get_direction((Recognizer *)recognizer);
-          if (dir == SwipeDirection_Left || dir == SwipeDirection_Right) {
+#ifdef CONFIG_STONE
+          const bool allowed = prv_back_swipe_allowed(state, dir);
+#else
+          const bool allowed = true;
+#endif
+          if (allowed && (dir == SwipeDirection_Left || dir == SwipeDirection_Right)) {
             ops->swipe(w, dir);
           }
         }
@@ -362,6 +375,22 @@ static void prv_apply_tier_exclusion(TouchNavState *state, TouchNavRoute route) 
 
 // ---------------------------------------------------------------------------------------------
 // Bridge
+
+#ifdef CONFIG_STONE
+// Back is an edge gesture, the way it is on iOS, and for the same reason: a right swipe that
+// works anywhere has to compete with everything else on screen, so it fires while you are
+// dragging content and reads as the watch going back by itself. Starting in a narrow strip that
+// nothing else owns removes the competition entirely.
+//
+// Only Back is gated. A left swipe is Select, which is not destructive and has nothing to
+// compete with.
+static bool prv_back_swipe_allowed(const TouchNavState *state, SwipeDirection direction) {
+  if (direction != SwipeDirection_Right) {
+    return true;
+  }
+  return state->touchdown_x < STONE_EDGE_BACK_WIDTH_PX;
+}
+#endif
 
 static ButtonId prv_swipe_button(SwipeDirection direction) {
   // Content-scroll convention: the emulated button opposes finger travel, matching native
@@ -438,6 +467,13 @@ static void prv_recognizer_event(const Recognizer *recognizer, RecognizerEvent e
         if (recognizer == state->swipe) {
           // A swipe over the bar stays full-screen: only taps are zoned.
           const SwipeDirection dir = swipe_recognizer_get_direction((Recognizer *)recognizer);
+#ifdef CONFIG_STONE
+          if (!prv_back_swipe_allowed(state, dir)) {
+            state->counters.dropped++;
+            prv_log_push(state, TouchNavLog_Dropped, (uint8_t)BUTTON_ID_BACK);
+            break;
+          }
+#endif
           prv_emit_click(state, prv_swipe_button(dir));
         } else if (recognizer == state->tap) {
           // Route the tap into the action-bar UP/SELECT/DOWN zone if the tap point is inside a
@@ -473,6 +509,9 @@ void touch_nav_dispatch(const TouchEvent *touch_event, void *context) {
   RecognizerManager *manager = state->manager;
 
   if (touch_event->type == TouchEvent_Touchdown) {
+#ifdef CONFIG_STONE
+    state->touchdown_x = touch_event->x;
+#endif
     // Live gate re-check: the navigational/gated decision is read from the touch EVENT itself
     // (event-time), not cached from the last focus-change event. The dispatcher runs per touch
     // event, so a delayed/missed PEBBLE_APP_DID_CHANGE_FOCUS_EVENT cannot stale this decision.

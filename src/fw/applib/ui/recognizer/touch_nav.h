@@ -180,6 +180,12 @@ typedef struct TouchNavState {
   RtcTicks last_update_ticks;
   bool declined;
 
+#ifdef CONFIG_STONE
+  //! X of the most recent Touchdown, so a back swipe can be required to start at the left edge.
+  //! Latched per gesture: where it began is what decides, not where it ended up.
+  int16_t touchdown_x;
+#endif
+
   //! Route latched on the most recent Touchdown.
   TouchNavRoute route;
 
