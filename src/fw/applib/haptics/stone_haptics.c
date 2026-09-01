@@ -27,6 +27,7 @@
 #include "applib/ui/vibes.h"
 
 #include "pbl/drivers/rtc.h"
+#include "pbl/util/math.h"
 #include "pbl/util/size.h"
 #include "syscall/syscall.h"
 
@@ -36,14 +37,30 @@
 
 #define MS_TO_TICKS(ms) (((uint64_t)(ms) * RTC_TICKS_HZ) / 1000u)
 
+//! Amplitude below which the motor does not reliably start turning, as a percentage. The gain
+//! register is 7 bits of full scale, so 25% is about 32 counts; below that a pulse this short is
+//! spent entirely in the LRA's start-up transient and is felt as nothing.
+//!
+//! This is why the envelope is applied *between* the floor and the peak rather than between zero
+//! and the peak. Scaling a 25% peak by a shape that opens at 40% asks the motor for 10%, and the
+//! first third of every light effect -- which is every button press -- was inaudible.
+#define PERCEPTIBLE_FLOOR_PCT (25)
+
 //! Peak amplitude per strength, as a percentage. Round hardware needs more to cross the same
 //! perceptual threshold, mirroring the split the globe view already makes rather than inventing
 //! a second rule.
+//!
+//! Every peak sits clear of PERCEPTIBLE_FLOOR_PCT rather than merely at or above it. The span
+//! between the two is what the envelope has to work with, so a peak on the floor is a strength
+//! whose three motions all feel the same -- which for the side buttons is the whole feature gone.
 static const uint8_t s_peak[StoneHapticStrengthCount] = {
-  [StoneHapticStrength_Light]  = PBL_IF_ROUND_ELSE(60, 25),
-  [StoneHapticStrength_Medium] = PBL_IF_ROUND_ELSE(75, 45),
-  [StoneHapticStrength_Firm]   = PBL_IF_ROUND_ELSE(90, 65),
+  [StoneHapticStrength_Light]  = PBL_IF_ROUND_ELSE(75, 50),
+  [StoneHapticStrength_Medium] = PBL_IF_ROUND_ELSE(85, 65),
+  [StoneHapticStrength_Firm]   = PBL_IF_ROUND_ELSE(100, 85),
 };
+
+_Static_assert(PBL_IF_ROUND_ELSE(75, 50) > PERCEPTIBLE_FLOOR_PCT,
+               "the lightest strength must leave the envelope somewhere to go");
 
 //! Per-segment duration. Rigid runs shorter so the attack is abrupt; soft runs longer so the
 //! swell has time to be felt as a swell.
@@ -126,11 +143,18 @@ void stone_haptics_emit(StoneHapticStrength strength, StoneHapticCharacter chara
   const uint8_t segment_ms = s_segment_ms[character];
   const uint8_t *shape = s_shape[motion][character];
 
+  // The shape spans floor..peak, not 0..peak. Direction still reads -- the segments differ from
+  // each other by the same proportion of the available range -- but no segment is asked for an
+  // amplitude the motor cannot produce. A peak already at or below the floor is played flat at
+  // the floor rather than shaped into silence.
+  const uint32_t floor_pct = MIN(PERCEPTIBLE_FLOOR_PCT, peak);
+  const uint32_t span = peak - floor_pct;
+
   uint32_t durations[MAX_SEGMENTS];
   uint32_t amplitudes[MAX_SEGMENTS];
   for (size_t i = 0; i < MAX_SEGMENTS; i++) {
     durations[i] = segment_ms;
-    amplitudes[i] = ((uint32_t)peak * shape[i]) / 100u;
+    amplitudes[i] = floor_pct + ((span * shape[i]) / 100u);
   }
 
   // The amplitude API, not the boolean one: the boolean path scales by the wearer's *alert*
