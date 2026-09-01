@@ -80,6 +80,44 @@ Confirm it on hardware — install two builds in the wrong order and read
 Settings → Stone — before relying on it.
 ```
 
+## Why Stone versions start at 999
+
+Stone builds are tagged from `v999.0.0.1`, so `git describe` on `stone` yields
+`v999.0.0.1-<n>-g<sha>` and the companion app parses the version as `999.0.0`.
+
+This is not vanity. It is load-bearing.
+
+The app compares `major.minor.patch` against the running firmware and calls
+anything lower a **downgrade** — and its downgrade path reboots the watch into
+PRF. Once in PRF, its routine update check runs, finds Core's shipping build
+newer, and **installs that over the firmware you just sideloaded.** The build
+you asked for is never transferred. It looks exactly like a failed install; it
+is not. It is a successful install of something else.
+
+That is not avoidable by syncing upstream. Core ships `v4.36.2` from
+`4.36-branch`, a release branch that upstream `main` never reaches — `main`
+describes as `v4.36.0-<n>`, which is permanently *lower* than what is on the
+wrist. Every main-derived build would be a downgrade forever.
+
+So the fork carries its own version floor, chosen high enough to never be
+overtaken. The fourth component is ours to bump.
+
+```{warning}
+**The tag must stay reachable from `stone`.** The nightly sync rebases the patch
+queue, and a tag left on a rebased-away commit stops being an ancestor —
+`git describe` then silently falls back to `v4.36.0-<n>` and every install
+becomes a downgrade again, with no error anywhere to say so.
+
+After a sync that rewrites the queue, check it:
+
+```shell
+git describe --tags stone      # must start with v999.
+```
+
+Re-tag if it does not. `main` must **not** carry this tag — Safe Builds are
+built from `main` and their versions should stay truthful.
+```
+
 ## Ways back, in increasing order of disruption
 
 1. **Reinstall a known-good bundle.** Data intact, minutes. Use a Safe Build.
