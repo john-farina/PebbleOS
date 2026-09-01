@@ -4,6 +4,7 @@
 #include "touch_nav.h"
 
 #ifdef CONFIG_STONE
+#include "applib/haptics/stone_haptics.h"
 #include "stone_edge_back.h"
 
 // Defined below, beside the swipe-to-button mapping it belongs with; declared here
@@ -473,6 +474,13 @@ static void prv_recognizer_event(const Recognizer *recognizer, RecognizerEvent e
             prv_log_push(state, TouchNavLog_Dropped, (uint8_t)BUTTON_ID_BACK);
             break;
           }
+#ifdef CONFIG_VIBE
+          if (dir == SwipeDirection_Right) {
+            // Going back, so the envelope falls. The gesture has no button under it to confirm
+            // the press, which makes the haptic the only acknowledgement there is.
+            stone_haptics_play(StoneHaptic_Exit);
+          }
+#endif
 #endif
           prv_emit_click(state, prv_swipe_button(dir));
         } else if (recognizer == state->tap) {

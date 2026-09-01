@@ -19,7 +19,7 @@
 #include "applib/app_timer.h"
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
-#include "applib/ui/stone_haptics.h"
+#include "applib/haptics/stone_haptics.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"

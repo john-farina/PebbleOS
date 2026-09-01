@@ -22,7 +22,7 @@
 #include "window.h"
 
 #include "applib/ui/menu_layer.h"
-#include "applib/ui/stone_haptics.h"
+#include "applib/haptics/stone_haptics.h"
 #include "apps/system/launcher/default/stone_app_list.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/i18n/i18n.h"

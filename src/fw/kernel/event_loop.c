@@ -57,6 +57,7 @@
 #include "pbl/services/wakeup.h"
 #include "pbl/services/runlevel.h"
 #include "shell/normal/app_idle_timeout.h"
+#include "applib/haptics/stone_haptics.h"
 #include "shell/normal/watchface.h"
 #include "shell/prefs.h"
 #include "shell/shell_event_loop.h"
@@ -195,6 +196,12 @@ static void launcher_handle_button_event(PebbleEvent* e) {
 #ifdef CONFIG_TOUCH
     // Deliberate interaction: open the touch session so touch may navigate.
     touch_session_arm(TouchSessionArmSource_Button);
+#endif
+#if defined(CONFIG_STONE) && defined(CONFIG_VIBE)
+    // Every button press, everywhere, carrying where the button is. Done here rather than per
+    // app so the watch answers a press the same way whatever is on screen -- which is the whole
+    // point of a press being acknowledged at all.
+    stone_haptics_button(button_id);
 #endif
     light_button_pressed();
   } else if (e->type == PEBBLE_BUTTON_UP_EVENT) {

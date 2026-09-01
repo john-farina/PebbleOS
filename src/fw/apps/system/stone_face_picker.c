@@ -31,7 +31,7 @@
 #include "applib/ui/animation.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/property_animation.h"
-#include "applib/ui/stone_haptics.h"
+#include "applib/haptics/stone_haptics.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
 #include "process_management/app_install_manager.h"
