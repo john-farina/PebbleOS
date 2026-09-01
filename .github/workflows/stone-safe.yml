@@ -119,7 +119,12 @@ jobs:
           # `git describe` and hard-fails on a tag it cannot parse, so a tag
           # like `safe-2026-08-31` would break every later build that can reach
           # it. `vX.Y.Z-safeN` parses, and stays in the bootloader's dev band.
-          mmp=$(git describe --tags --abbrev=0 --match 'v[0-9]*' | sed -E 's/^v//; s/-.*$//')
+          # --exclude '*safe*': a previous safe tag sits on this same history
+          # and is nearer than the real upstream tag, so without this each safe
+          # build derives its version from the last one and the base silently
+          # freezes at whatever it was the first time.
+          mmp=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*safe*' \
+            | sed -E 's/^v//; s/-.*$//')
           echo "tag=v${mmp}-${{ inputs.label }}${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"

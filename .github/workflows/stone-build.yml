@@ -17,6 +17,9 @@ on:
 env:
   BOARD: obelix@pvt
   BOARD_NAME: obelix_pvt
+  # Each component lands in WatchInfoVersion, whose fields are uint8_t, so none
+  # may exceed 255. Bump the fourth component for milestones.
+  STONE_VERSION_FLOOR: v200.0.0.1
 
 jobs:
   changes:
@@ -131,6 +134,30 @@ jobs:
       # git describe drives the firmware version, so the tags have to be here.
       - name: Fetch tags
         run: git fetch --tags --force
+
+      # Stone builds must outrank the firmware Core ships or the companion app
+      # calls every install a downgrade, reboots the watch into PRF, and its
+      # update check then restores stock over the build you just sideloaded.
+      # Core ships from a release branch upstream `main` never reaches, so no
+      # main-derived version can ever be high enough. See docs/stone/recovery.md.
+      #
+      # The tag is created here rather than pushed, for two reasons: a pushed
+      # `v*` tag fires upstream's release.yml on every sync, and a pushed tag is
+      # orphaned by the nightly rebase -- which would silently drop the version
+      # back down with nothing to say so. Deriving it each build is immune to
+      # both. It sits on the upstream base so `git describe` still appends
+      # `-<patches>-g<sha>` and every commit gets a distinct version.
+      - name: Stamp the Stone version floor
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1000 || git fetch origin main
+          base=$(git merge-base HEAD origin/main)
+          # Annotated (-a), not lightweight: tools/gitinfo.py calls plain
+          # `git describe`, which considers annotated tags only. A lightweight
+          # tag here is silently ignored and the version falls back.
+          git tag -fa "${STONE_VERSION_FLOOR}" -m "Stone version floor" "$base"
+          echo "floor ${STONE_VERSION_FLOOR} at $(git rev-parse --short "$base")"
+          echo "version: $(git describe --tags)"
 
       - name: Rebase onto target branch
         uses: ./.github/actions/rebase

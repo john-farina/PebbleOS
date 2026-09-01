@@ -97,6 +97,18 @@ gitlint --commits origin/stone..HEAD
 Then read your own diff adversarially — a missing include or a typo'd
 `Kconfig` symbol costs a full cycle, and both are visible by eye.
 
+**Before telling John to install anything, check the version.** The build's
+channel entry must read `v200.x`:
+
+```shell
+curl -sS "$STONE_CHANNEL_URL/channels"
+```
+
+A `v4.36.x` there means the version floor did not apply, and the app will treat
+the build as a downgrade: it reboots the watch into PRF and restores stock over
+it. The install looks like it failed when it actually installed something else.
+See {doc}`recovery`.
+
 `gitlint` installs as **`gitlint-core`**; plain `gitlint` fails to build. Its
 default rules reject the word "WIP" in a title and cap it at 72 characters.
 

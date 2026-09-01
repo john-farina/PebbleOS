@@ -73,12 +73,23 @@ A live list inside *Settings* instead would need a new BlobDB or protocol
 endpoint matched in both repositories, touching upstream-owned registration
 files on both sides. Same UX, much larger permanent diff.
 
+## Answered on hardware
+
+- **Whether the official app would offer a Core release over a Stone build.**
+  **Yes, and it will install it over yours.** A build whose version is lower than
+  the running firmware is treated as a downgrade: the app reboots into PRF, its
+  update check then finds Core's build newer, and installs that instead. The
+  sideloaded build is never transferred. This is why Stone carries a version
+  floor — see {doc}`recovery`.
+- **PRF recovery works on a retail Pebble Time 2.** Confirmed the hard way on
+  2026-09-01: the watch went to PRF, the iOS app saw it, restored firmware, and
+  came back with settings, apps and pairing intact. The 21 MB `FILESYSTEM`
+  region was untouched, as documented.
+
 ## Open questions
 
-- **Boot priority on real hardware.** Inferred from `tools/pblboot.py`; the
-  bootloader is not in this repo. Whether rolling back needs
-  `tools/stone/restamp_priority.py` at all depends on it, and so does whether
-  installing an older build works without it. See {doc}`recovery`.
-- **Whether the official app would offer a Core release over a Stone build.**
-  Decided in the app, not the firmware. With your own app build pointed at your
-  own server it is moot, but worth knowing before then.
+- **Boot priority on real hardware.** Still inferred from `tools/pblboot.py`; the
+  bootloader is not in this repo. Not yet tested deliberately, because the first
+  install failed for the version reason above rather than for a priority reason.
+  Install an older build over a newer one and read `Settings` → `Stone`. See
+  {doc}`recovery`.

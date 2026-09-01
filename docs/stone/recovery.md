@@ -82,51 +82,84 @@ Settings → Stone — before relying on it.
 
 ## Why Stone versions start at 200
 
-Stone builds are tagged from `v200.0.0.1`, so `git describe` on `stone` yields
-`v200.0.0.1-<n>-g<sha>` and the companion app parses the version as `200.0.0`.
-
-This is not vanity. It is load-bearing.
+Stone builds report `v200.0.0.1-<n>-g<sha>`, so the companion app parses the
+version as `200.0.0`. This is not vanity. It is load-bearing.
 
 The app compares `major.minor.patch` against the running firmware and calls
 anything lower a **downgrade** — and its downgrade path reboots the watch into
 PRF. Once in PRF, its routine update check runs, finds Core's shipping build
-newer, and **installs that over the firmware you just sideloaded.** The build
-you asked for is never transferred. It looks exactly like a failed install; it
-is not. It is a successful install of something else.
+newer, and **installs that over the firmware you just sideloaded.** The build you
+asked for is never transferred.
 
-That is not avoidable by syncing upstream. Core ships `v4.36.2` from
-`4.36-branch`, a release branch that upstream `main` never reaches — `main`
-describes as `v4.36.0-<n>`, which is permanently *lower* than what is on the
-wrist. Every main-derived build would be a downgrade forever.
+This is what it looks like in a bug report, and it is the whole failure in three
+lines:
 
-So the fork carries its own version floor, chosen high enough to never be
-overtaken. The fourth component is ours to bump.
+```
+[I] FWUpdate: Downgrade to v4.35.0-140-ga88d17811: rebooting watch into PRF
+[I] PebbleConnector: PRF running; going into recovery mode
+[D] FirmwareUpdateManager: firmwareUpdateAvailable = FoundUpdate(version=v4.36.2)
+```
 
-**Why 200 and not 999.** `GIT_MAJOR_VERSION` / `MINOR` / `PATCH` are assigned
-into `WatchInfoVersion` in `applib/app_watch_info.c`, and all three fields are
-`uint8_t`. Anything over 255 is a hard build failure, not a silent wrap:
+It presents as a failed install. It is a successful install of something else.
+The giveaway is that the build never reaches `InProgress`, and its build ID never
+appears in the watch logs at all.
+
+Syncing upstream cannot fix it. Core ships `v4.36.2` from `4.36-branch`, a
+release branch that upstream `main` never reaches — `main` describes as
+`v4.36.0-<n>`, permanently *lower* than what is on the wrist.
+
+### How the floor is applied
+
+`stone-build.yml` creates the tag **during the build** and never pushes it:
+
+```yaml
+base=$(git merge-base HEAD origin/main)
+git tag -fa "${STONE_VERSION_FLOOR}" -m "Stone version floor" "$base"
+```
+
+Three details, each of which cost a cycle to learn:
+
+- **Derived, not pushed.** The nightly sync rebases the patch queue, so a pushed
+  tag is orphaned by the next rebase — `git describe` would fall back to
+  `v4.36.0-<n>` and every install would quietly be a downgrade again, with no
+  error anywhere. Deriving it each build is immune.
+- **Annotated (`-fa`), not lightweight.** `tools/gitinfo.py` calls plain
+  `git describe`, which considers **annotated tags only**. A lightweight tag is
+  silently ignored and the version falls back — the same failure, harder to spot.
+- **On the upstream base, not on `HEAD`.** Tagging `HEAD` makes `git describe`
+  return a bare `v200.0.0.1` with no `-<n>-g<sha>`, so every build would carry an
+  identical version string.
+
+A pushed `v*` tag also fires upstream's `release.yml`, which builds firmware,
+PRF, QEMU and the SDK shell and publishes a GitHub Release — every time. Not
+pushing the tag avoids that too.
+
+### Why 200 and not 999
+
+`GIT_MAJOR_VERSION` / `MINOR` / `PATCH` are assigned into `WatchInfoVersion` in
+`applib/app_watch_info.c`, and all three fields are `uint8_t`. Anything over 255
+is a hard build failure, not a silent wrap:
 
 ```
 git_version.auto.h:5: error: unsigned conversion from 'int' to 'unsigned char'
 changes value from '999' to '231' [-Werror=overflow]
 ```
 
-200 clears everything Core will ship and still leaves headroom under the cap.
+200 clears anything Core will ship and leaves headroom. Bump the fourth
+component for milestones; it is ours.
 
-```{warning}
-**The tag must stay reachable from `stone`.** The nightly sync rebases the patch
-queue, and a tag left on a rebased-away commit stops being an ancestor —
-`git describe` then silently falls back to `v4.36.0-<n>` and every install
-becomes a downgrade again, with no error anywhere to say so.
+### Checking it
 
-After a sync that rewrites the queue, check it:
+The version is visible in the build's channel entry and in `Settings` → `Stone`
+on the watch. If either shows `v4.36.x` instead of `v200.x`, the floor did not
+apply and that build will be treated as a downgrade — do not install it.
 
-```shell
-git describe --tags stone      # must start with v200.
-```
-
-Re-tag if it does not. `main` must **not** carry this tag — Safe Builds are
-built from `main` and their versions should stay truthful.
+```{note}
+`main` deliberately does **not** carry the floor. Safe Builds come from `main`
+and their versions should stay truthful, which is also why `stone-safe.yml`
+excludes `*safe*` when deriving its base: a previous safe tag sits on the same
+history and is nearer than the real upstream tag, so without the exclusion each
+safe build derives its version from the last one and the base freezes.
 ```
 
 ## Ways back, in increasing order of disruption
@@ -162,8 +195,17 @@ A retail Pebble Time 2 has **no exposed SWD header**, so `./pbl flash` is not
 available. PRF plus the app's restore is the only way back.
 
 Confirm a recovery boot and a stock restore work **once, deliberately, before
-installing any custom firmware.** The procedure is not documented in this
-repository; get it from Core Devices' support rather than guessing.
+installing any custom firmware.**
+
+**This path is now known to work** (2026-09-01, `obelix@pvt`, iOS app): the watch
+showed the PRF QR screen, the app detected it, restored firmware over Bluetooth,
+and came back with settings, apps, watchfaces and pairing intact. No button combo
+was needed — the install itself put the watch into PRF, and the app drove the
+recovery. `FILESYSTEM` was untouched.
+
+The manual entry gesture is still undocumented here. If you ever need to reach
+PRF without the app putting you there, ask Core Devices rather than guessing —
+nothing in this repository specifies it for SF32LB52 hardware.
 
 Keep the `_loghash_dict.json` that ships beside each bundle. Release builds do
 not carry it, and without the matching one a crash log is a wall of hashes.

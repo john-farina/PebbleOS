@@ -143,6 +143,11 @@ The five things most likely to waste your time:
 - **Boot priority is stamped at build time, not install time.** Installing an
   older build does not make it boot; re-stamp it first with
   `tools/stone/restamp_priority.py`. See `docs/stone/recovery.md`.
+- **Stone builds must report `v200.x`.** `stone-build.yml` derives that floor per
+  build. If a build reports `v4.36.x`, the floor did not apply and the companion
+  app will treat the install as a downgrade — it reboots into PRF and restores
+  Core's firmware over yours, which looks like a failed install but is an install
+  of something else. Check the channel entry before John installs anything.
 
 The channel server is `tools/stone/channel/` — one Cloudflare Worker, no
 dependencies, `npm test` runs its 28 cases with no network. Its README explains
