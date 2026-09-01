@@ -118,6 +118,36 @@ upstream area, and `ci:` for workflow changes.
 Run it before pushing — see {doc}`ci` for the install that actually works, and
 for the default rule that rejects the word "WIP" in a title.
 
+## Every build says what it is
+
+A push to a branch other than `stone` produces a build somebody installs, so
+**before you push, write one sentence in `tools/stone/build_summary.txt`
+saying what changed.** This is not a nicety and CI enforces it: if the newest
+commit touching firmware or tooling is newer than the newest commit touching
+that file, the build is rejected.
+
+The watch shows two things about a WIP build, side by side in the Stone app at
+the top of the app list:
+
+| | |
+| --- | --- |
+| **Build** | `navigation.7` — the branch, and how far into it this build is |
+| **Summary** | the sentence you wrote |
+
+The label is derived, not stored: `tools/stone/build_info.py` counts commits
+since the branch left `stone` and takes the first word of the branch name. You
+never set it and two sessions cannot disagree about it. `stone` and `main` get
+no label -- there the version string is the answer.
+
+Write the summary for the person wearing the watch, not for the diff: what is
+different about *this* build, in one sentence, no hashes and no filenames. Keep
+it under 72 characters, which is what the row can show.
+
+The reason this is a gate rather than a convention: a commit hash cannot be
+ordered by eye. Told a watch is running `34ec6f2`, nobody can say whether that
+is ahead of or behind `7d0cb89`, and two sessions have now been spent
+debugging builds whose only fault was being older than the one being described.
+
 ## Set up rerere once
 
 ```shell

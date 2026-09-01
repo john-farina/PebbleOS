@@ -149,6 +149,12 @@ The five things most likely to waste your time:
   Core's firmware over yours, which looks like a failed install but is an install
   of something else. Check the channel entry before John installs anything.
 
+**Before you push a branch, write one sentence in
+`tools/stone/build_summary.txt` saying what changed in this build.** CI rejects
+a build whose summary is older than its newest code change, because the watch
+renders that sentence under the build's name and a stale one is worse than
+none. See `docs/stone/index.md`.
+
 The channel server is `tools/stone/channel/` — one Cloudflare Worker, no
 dependencies, `npm test` runs its 28 cases with no network. Its README explains
 why bundles live in KV rather than in release assets.

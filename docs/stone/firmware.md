@@ -13,8 +13,8 @@ unwinding the patch queue.
 | Area | Files | |
 | --- | --- | --- |
 | Boot splash | `src/fw/board/splash/splash_stone.xbm`, `splash.h` | A `stoneOS` wordmark |
-| Build metadata | `src/fw/stone_build_info.auto.h.in`, `tools/stone/build_info.py` | Branch, commit, base, dirty |
-| Settings screen | `src/fw/apps/system/settings/stone.{c,h}` | Settings → Stone |
+| Build metadata | `src/fw/stone_build_info.auto.h.in`, `tools/stone/build_info.py` | Branch, commit, base, dirty, and on a WIP branch the build label and summary |
+| Stone app | `src/fw/apps/system/stone_app.{c,h}`, `settings/stone.{c,h}`, `launcher/default/app_glance_stone.{c,h}` | The build the watch is running, first in the app list |
 | Rebrand | 11 source files | One user-visible string each |
 
 ## The boot splash

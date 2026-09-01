@@ -427,6 +427,43 @@ mapping from feel to number is what `stone_haptics.c` exists to own.
   `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
   upstream sets the default only on a *successful* launch and writing the pref directly would
   strand the wearer on a face whose fetch failed.
+- **2026-09-01 (build identity)** — Builds now name themselves. A WIP build carries
+  `navigation.7` -- the branch and how far into it the build is -- plus one sentence from
+  `tools/stone/build_summary.txt` saying what changed, and the pair is rendered by a **Stone app
+  at the top of the app list** rather than by a row five deep inside Settings.
+
+  This exists because of the session logged directly below: a whole investigation was spent on
+  features that were absent from the build being described, and the only identifier available was
+  a commit hash. Seven hex digits do not order themselves, so nothing about `34ec6f2` says it is
+  older than `7d0cb89`. That is the failure this closes, and it is why the summary is a **CI gate
+  rather than a convention** -- the check is "is the summary older than the newest code change?",
+  which cannot be satisfied by one edit at the start of a branch the way "was it ever touched?"
+  can.
+
+  Three things a later session should not have to rediscover:
+
+  - The label is **derived, not stored**. A counter in a file is one two sessions can disagree
+    about; one in CI cannot be reproduced locally. Counting commits since the branch left `stone`
+    is neither, and a given number always names the same code.
+  - Stone is still a **settings module**, just not a *listed* one. `SettingsMenuItem_ListedCount`
+    now splits "rows in the Settings list" from "categories that exist", so the app pushes the
+    same window with `settings_menu_push()` and there is one implementation of the list rather
+    than two. Adding another unlisted category means adding it after that marker.
+  - The app-list row's subtitle comes from a bespoke glance (`app_glance_stone.c`), modelled on
+    the Watchfaces one because it is the same shape: a title, an icon, and one line that cannot
+    change while you are looking at it. It shows the label on a WIP build and the version string
+    on a release build -- never both, since showing a version on a WIP build is how the two get
+    confused in the first place.
+
+  **Unverified:** the row's appearance. The app list is button-reachable and so is exactly the
+  kind of thing `qemu_emery` can screenshot, but this environment has no PebbleOS SDK and so no
+  `qemu-pebble`. It compiles for `obelix@pvt`, and the glance follows the Watchfaces one
+  structurally, but nobody has looked at it. **First thing to check on the watch: does the Stone
+  row sit at the top of the app list, with its build label underneath, and does the icon read at
+  that size?** It borrows `RESOURCE_ID_SETTINGS_TINY`, the same gear Settings uses, because no
+  better icon exists in the tree yet; a dedicated one is a small resource change if it looks
+  wrong next to Settings.
+
 - **2026-09-01 (fixes)** — John reported haptics and previews as not working, from `34ec6f2`,
   which contains neither. The build was the whole of that answer. Auditing the head build anyway
   found that two of the three follow-ups were broken on their own terms, and fixed those plus the
