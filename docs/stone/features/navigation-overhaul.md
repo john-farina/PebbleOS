@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | Planned; no firmware written |
+| **Status** | Feature 1 (buttons) done, untested on hardware. 2–4 not started |
 
 ## What this is
 
@@ -58,7 +58,16 @@ Four separable features:
 
 ## Where it stands
 
-Research and planning are done. No firmware has been written. The branch is this file.
+**The button half of feature 1 is written and has never been compiled** — there is no ARM
+toolchain here, so the first real signal is CI, and the first real *test* is John's wrist.
+Two commits: `shell: let the middle button be assigned a tap action` (the `qlSingleClickSelect`
+preference and its "Tap Center" settings row) and `shell: make Back open the app list from the
+watchface` (both new handlers plus the click table). Everything is behind `CONFIG_STONE`, with
+the upstream handlers kept on the `#else` path, so `CONFIG_STONE=n` still builds and still
+behaves like stock.
+
+Features 2, 3 and 4 are planned but not started. The **touch half of feature 1 is also not
+started** — see the next paragraph, which is the thing most likely to bite the next session.
 
 The research result that matters: **three of the four features are wiring, not new
 subsystems.** The launcher already filters its list; app order already persists to flash with
@@ -66,13 +75,12 @@ a working write path; Quick Launch already configures click *and* hold per butto
 is already a full touch stack — service, session gating, tap/pan/swipe recognizers, and a
 tiered touch-navigation bridge, mostly Core Devices 2026. **Do not write a touch service.**
 
-The one thing that is *not* free, and that the plan initially got wrong: **watchfaces are
-deliberately excluded from touch.** `applib/touch_service.c:22-25` returns a NULL service
-state for `sys_app_is_watchface()` with the comment *"Touch is reserved for watchapps;
-watchfaces must not consume it."* So no gesture reaches a running watchface today. See
-Decided for the shape that gets around it without fighting that rule.
-
-Next step is feature 1 — smallest diff, biggest change in feel.
+The one thing that is *not* free: **watchfaces are deliberately excluded from touch.**
+`applib/touch_service.c:22-25` returns a NULL service state for `sys_app_is_watchface()` with
+the comment *"Touch is reserved for watchapps; watchfaces must not consume it."* So no gesture
+reaches a running watchface today, and the Back change above does **not** give
+swipe-right-opens-apps for free the way it first appeared to. See Decided for the shape that
+gets around it without fighting upstream's rule.
 
 ## Decided
 
@@ -153,8 +161,30 @@ Next step is feature 1 — smallest diff, biggest change in feel.
 
 ## How to test it
 
-Nothing to test yet — no firmware has changed. Each feature adds its own steps here as it
-lands, and this paragraph goes away when the first one does.
+### Feature 1, buttons
+
+Install this channel, then from the watchface:
+
+1. **With no notification showing on the face**, press BACK. The app list opens — the same
+   list SELECT has always opened.
+2. Press BACK again. You are back on the watchface.
+3. **With a notification peeking at the bottom of the face**, press BACK. The peek goes away
+   and you stay on the watchface. Press BACK again: now the app list opens.
+4. Press SELECT. The app list opens, exactly as before.
+5. Hold BACK. Quiet Time toggles, exactly as before.
+6. Go to **Settings → Quick Launch**. There is a new row, **Tap Center**, sitting under Tap Up
+   and Tap Down. It reads "Disabled".
+7. Select it and pick **Music**. Return to the watchface and press SELECT: Music opens instead
+   of the app list.
+8. Go back to Settings → Quick Launch → Tap Center and choose **Disable**. Press SELECT on the
+   watchface: the app list opens again.
+
+If step 1 opens nothing, or step 3 opens the app list on the *first* press, that is the peek
+check misfiring — say which, because the two failures point at different halves of
+`prv_back_click`.
+
+**Touch is not part of this yet.** Swiping on the watchface still does nothing; that is
+expected, not a bug. See Where it stands.
 
 ## Log
 
@@ -170,3 +200,13 @@ lands, and this paragraph goes away when the first one does.
   off-by-default setting. Settled the BACK question with John and recorded his four
   decisions. Found and corrected one wrong assumption about watchface touch — see Tried and
   rejected.
+- **2026-09-01** — Wrote the button half of feature 1: the `qlSingleClickSelect` preference
+  with its "Tap Center" settings row, and the two new watchface click handlers. Not compiled —
+  no toolchain — so CI is the first check and the wrist is the second. Two things were done
+  deliberately and are worth not undoing: `prv_back_click` calls the upstream
+  `prv_dismiss_timeline_peek` rather than `timeline_peek_dismiss()` directly, which keeps that
+  function referenced so `CONFIG_STONE=n` compiles without an unused-function warning; and
+  every `quick_launch_single_click_*` switch got a guarded `BUTTON_ID_SELECT` case, all four of
+  them, because the ones that previously fell through to `PBL_ASSERTN(0)` would croak at
+  runtime rather than fail the build. If a Select tap panics the watch, a missed switch is the
+  first place to look.
