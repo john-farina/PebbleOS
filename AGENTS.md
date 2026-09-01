@@ -79,3 +79,33 @@ Others:
 
 - If fixing Linear or GitHub issues, include in the commit body a line with
   `Fixes XXX`, where XXX is the issue number.
+
+# Stone OS (this fork)
+
+This repository is **Stone OS**, a personal fork of PebbleOS for a Pebble
+Time 2 (`obelix@pvt`). Read `docs/stone/index.md` before changing anything —
+the fork has conventions that exist to keep it maintainable against an upstream
+landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
+
+| Read | For |
+| --- | --- |
+| `docs/stone/index.md` | Naming rule, branch model, commit conventions, resolving a sync conflict |
+| `docs/stone/ci.md` | The `stone-*.yml` workflows, the CI gates, and how to reproduce them locally |
+| `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
+| `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
+| `docs/stone/roadmap.md` | What is not built yet and which decisions are still open |
+
+The five things most likely to waste your time:
+
+- **Work on `stone`, never `main`.** `main` is an exact upstream mirror. PRs
+  target `stone` and are merged with **rebase**, never a merge commit.
+- **Keep the diff against upstream-owned files small.** Prefer new files behind
+  `CONFIG_STONE`; when a line must go into an upstream file, append it at the
+  end of its block. Check the cost with
+  `git diff --numstat origin/main..origin/stone`.
+- **Upstream's workflows only trigger on `main`**, so our PRs get CI only from
+  `stone-build.yml` and `compliance.yml`. Never edit an upstream workflow file.
+- **There is no ARM toolchain here.** Firmware cannot be compiled locally; CI is
+  the compiler and each cycle is ~7 minutes. Verify statically first.
+- **`gitlint` installs as `gitlint-core`** (plain `gitlint` fails to build), and
+  its default rules reject the word "WIP" in a commit title.
