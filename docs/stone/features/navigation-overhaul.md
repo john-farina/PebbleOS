@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | Features 1–3 built and partly verified in the simulator. Carousel not started |
+| **Status** | All four written and building. Only features 1–2 seen on a screen |
 
 ## What this is
 
@@ -58,8 +58,9 @@ Four separable features:
 
 ## Where it stands
 
-**Features 1, 2 and 3 build and were partly verified in `qemu_emery`.** None has been on real
-hardware. Feature 4, the watchface carousel, is not started.
+**All four features are written and build.** Features 1 and 2 were verified by screenshot in
+`qemu_emery`; features 3 and 4 have been compiled but never run. Nothing has been on real
+hardware.
 
 Verified by screenshot in the simulator:
 
@@ -69,10 +70,21 @@ Verified by screenshot in the simulator:
   Watchfaces, Workout, Health, Timeline.
 - **Settings → Apps** exists, between System and Stone, and lists the main apps.
 
-Not yet verified, and the first thing to do next: **grab-and-move reordering**, whether the
-order survives a reboot, and the "Not in the list" heading with Golf under it. Testing stopped
-because John started the simulator in his own clone and `./sim` pkills every `qemu-pebble`
-process, so two of us cannot drive it at once.
+**Not yet verified, and this is the whole of what is left to do:**
+
+- **Grab-and-move reordering** — that Select picks a row up, Up/Down moves it, Select drops it,
+  and the order survives a reboot. This is the medium-risk feature: it is the first on-watch
+  writer of `lnc_ord`, and a write failure is silent by design.
+- **The "Not in the list" heading**, with Golf under it, and that the selection skips the heading.
+- **The whole watchface picker.** It compiles and is registered as app `-101`, and not one line
+  of it has ever executed. Treat it as unproven. The most likely failure is the paging animation
+  (`property_animation_create` against a custom int16 implementation, copied from
+  `crumbs_layer.c`) and, on touch, whether opting out of the touch-nav bridge really does leave
+  horizontal swipes to the picker's own recognizers.
+
+Testing stopped because John started the simulator in his own clone and `./sim` pkills every
+`qemu-pebble` process, so two of us cannot drive it at once. Everything above is a `./sim boot`
+away once it is free.
 
 Two pieces of tooling bit here and will bite the next session:
 
@@ -98,6 +110,7 @@ before pushing; CI is no longer the only compiler.
 | `touch: let the watchface respond to gestures` | Controller gestures routed to the shell; CST816 swipe + long press dispatched |
 | `apps: keep only apps in the main list` | `stone_app_list_is_app()`, the launcher filter hook, Settings > Apps |
 | `settings: let the app list be reordered on the watch` | Grab-and-move reordering, written to `lnc_ord` |
+| `apps: add the watchface picker` | The carousel: a system app, entered by holding the face |
 
 Everything is behind `CONFIG_STONE`, with upstream's handlers kept on the `#else` path, so
 `CONFIG_STONE=n` still builds and still behaves like stock.
@@ -318,3 +331,13 @@ failure there is silent by design.
   needs; that would have been a wasted cycle. Swipe directions are corrected twice on purpose,
   for board axis inversion in the driver and for left-hand mode in the service, because a
   direction that is not turned with the display reports backwards on a rotated watch.
+- **2026-09-01** — Built the watchface picker and wired its two entry points: the touch long
+  press on the face, and Hold Center, which now defaults to it rather than to nothing. It is an
+  ordinary system app (id `-101`, gated on `CONFIG_STONE` through the registry's `ifdefs`), which
+  is what let it reuse Quick Launch instead of growing new button plumbing. Compiles; entirely
+  unrun. Two things a later session should not have to rediscover: the picker's window calls
+  `window_set_touch_bridge_disabled(true)`, without which a horizontal swipe becomes a Back or
+  Select press before the picker's recognizers see it; and committing a face goes through
+  `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
+  upstream sets the default only on a *successful* launch and writing the pref directly would
+  strand the wearer on a face whose fetch failed.
