@@ -114,7 +114,31 @@ gets around it without fighting upstream's rule.
   in the firmware already scrolls, flings and overscrolls by finger. Nothing to do there.
 - **These four apps move out of the main list:** Golf, Send Text, Reminders, Sports. John
   confirmed all four. Everything else in the launcher today already matches his keep-list.
-- **Carousel buttons: UP/DOWN step, SELECT keeps, BACK leaves unchanged.** John's pick.
+- **The carousel is entered by holding on the watchface, and driven by touch.** John, asked
+  whether a bare swipe should switch faces with no hold:
+
+  > no lets make it hold on the watchface and then u can swipe and then u can press a watchface
+  > and then it goes back to normal in that
+
+  So: **long-press the face → swipe between faces → tap one to keep it and return.** No bare
+  swipe-to-switch, which is also where Apple landed after removing it in watchOS 10 as too easy
+  to trigger by accident. Buttons stay as a parallel path for the same three actions (UP/DOWN
+  step, SELECT keeps, BACK leaves unchanged), because a watch with four buttons should not have
+  a mode you can only leave by touching it.
+- **This makes watchface touch a prerequisite for feature 4, not an optional extra.** The
+  entry gesture is a touch long-press *on a running watchface*, which is exactly the case
+  upstream's touch service refuses (see Where it stands). So the shell-side touch routing has
+  to land before the carousel can be entered the way John wants it. Reordered accordingly: the
+  touch half of feature 1 now blocks feature 4.
+- **The CST816's own long-press is the mechanism for that entry gesture.** The controller
+  reports `0x0C` long-press and the driver already decodes the constant and drops it
+  (`drivers/touch/cst816/cst816.c:43,333-342`). Because the software recognizers in
+  `applib/ui/recognizer/` never run on a watchface, the hardware gesture is not merely the
+  cheap option here — it is the only one that works without fighting upstream's rule.
+- **Health is already in the app list.** John confirmed on the watch. The
+  `ProcessVisibilityHidden` in `apps/system/health/health.c:181` sits inside
+  `#if CAPABILITY_HAS_CORE_NAVIGATION4`, a macro defined nowhere in the tree, so the line never
+  compiles. Feature 2 does not need to do anything about Health.
 - **Reorder interaction: grab and move.** SELECT picks the row up, UP/DOWN move it, SELECT
   drops it. John's pick over a per-row action menu.
 - **The carousel ships as a system app**, so it can be bound to any hold slot through the
@@ -142,10 +166,6 @@ gets around it without fighting upstream's rule.
 
 ## Open questions
 
-- **Should a bare swipe on the watchface switch faces, with no long-press?** Apple shipped
-  this, removed it in watchOS 10 because people triggered it by accident, then restored it in
-  10.2 behind a setting that is off by default. Recommendation: long-press only to begin, and
-  add the swipe behind a Settings toggle if John misses it. **John decides.**
 - **Multi-finger is not possible on this hardware.** The CST816 is a single-point controller
   and the driver reads one contact record (`CST816_TOUCH_DATA_SIZE 5`). It is not that the
   stack collapses multiple points — a second point never enters the system. `TouchEvent`
@@ -154,10 +174,7 @@ gets around it without fighting upstream's rule.
   old multi-touch design, but `TouchIdx` is defined nowhere in the tree and the function is
   never implemented, so that header is dead code. Two-finger gestures would need a different
   controller plus a wider event. **Flagged, not actionable.**
-- **Is Health actually in the launcher today?** Its `ProcessVisibilityHidden` sits inside
-  `#if CAPABILITY_HAS_CORE_NAVIGATION4` (`apps/system/health/health.c:181`), and that macro
-  is defined nowhere in the repository, so the line should never compile and Health should be
-  visible. **Confirm on the watch** before feature 2 does anything about it.
+- Nothing else is open. Both remaining questions were settled on 2026-09-01 — see Decided.
 
 ## How to test it
 
@@ -210,3 +227,10 @@ expected, not a bug. See Where it stands.
   them, because the ones that previously fell through to `PBL_ASSERTN(0)` would croak at
   runtime rather than fail the build. If a Select tap panics the watch, a missed switch is the
   first place to look.
+- **2026-09-01** — John settled both open questions: the carousel is hold-then-swipe-then-tap
+  with no bare swipe, and Health is already in the list. The first answer promotes watchface
+  touch from optional to blocking, because the entry gesture is a long-press on a running
+  watchface and that is precisely what the app-side touch service refuses. Next session starts
+  there: dispatch the CST816's long-press and swipe gesture IDs, extend `TouchGesture` /
+  `GestureEventType`, and route `PEBBLE_GESTURE_EVENT` to a new `watchface_handle_gesture_event()`
+  from `kernel/event_loop.c` where it currently returns after the backlight wake.
