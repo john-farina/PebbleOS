@@ -109,6 +109,66 @@ jobs:
                  "the end is where a session runs out of context."
           fi
 
+  # Every WIP build carries a one-sentence summary, rendered on the watch under
+  # the build number. A rule an agent can forget is a rule that decays, and the
+  # cost of forgetting lands on whoever is wearing the watch and cannot tell
+  # what they installed -- so it is a gate, not a convention.
+  #
+  # The check is "is the summary stale?", not "was it touched?". Touching it
+  # once at the start of a branch would satisfy the weaker rule forever, which
+  # is exactly the failure mode the notes job already warns about.
+  summary:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref_name != 'stone' && github.ref_name != 'main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the build summary is not stale
+        run: |
+          set -euo pipefail
+          file="tools/stone/build_summary.txt"
+
+          # Everything a build is made of. The summary itself is excluded, or
+          # updating it would always look like a code change of its own.
+          last_code=$(git rev-list -1 HEAD -- \
+            boards cmake CMakeLists.txt apps resources sdk soc src subsys \
+            third_party tools pbl ":!${file}")
+          last_summary=$(git rev-list -1 HEAD -- "${file}")
+
+          if [ -z "$last_summary" ]; then
+            echo "::error::${file} has never been written on this branch."
+            echo "Every build carries one sentence saying what changed in it."
+            echo "Edit ${file} and push again."
+            exit 1
+          fi
+
+          summary=$(grep -v '^[[:space:]]*#' "${file}" | grep -v '^[[:space:]]*$' \
+                    | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [ -z "$summary" ]; then
+            echo "::error::${file} has comments but no summary line."
+            exit 1
+          fi
+          if [ "${#summary}" -gt 72 ]; then
+            echo "::error::the summary is ${#summary} characters; the watch shows 72."
+            echo "  ${summary}"
+            exit 1
+          fi
+
+          # Stale means: code moved on after the summary last did.
+          if [ -n "$last_code" ] && [ "$last_code" != "$last_summary" ] \
+             && git merge-base --is-ancestor "$last_summary" "$last_code"; then
+            echo "::error::${file} is stale."
+            echo "The newest code change is $(git rev-parse --short "$last_code")"
+            echo "  $(git log -1 --format=%s "$last_code")"
+            echo "but the summary was last written at $(git rev-parse --short "$last_summary")."
+            echo "Say what this build changed, in one sentence, and push again."
+            exit 1
+          fi
+          echo "summary: ${summary}"
+
   build:
     needs: changes
     if: needs.changes.outputs.should-build == 'true'
