@@ -8,7 +8,7 @@ orphan: true
 | --- | --- |
 | **Branch** | `feat/navigation-overhaul` |
 | **Started** | 2026-09-01 |
-| **Status** | All four plus haptics, real previews and edge-back. Hardware-only from here |
+| **Status** | Seven pieces built and published. On John's wrist for testing; nothing confirmed yet |
 
 ## What this is
 
@@ -56,79 +56,67 @@ Four separable features:
 3. **Reorderable list** — a Settings → Apps page that controls the order.
 4. **Watchface carousel** — long-press the face for a paged, snapping picker.
 
+Three more were asked for once the first four were building, and are part of this branch:
+
+5. **Real watchface miniatures** in the picker, instead of icons.
+6. **A haptic vocabulary**, with the three right-hand buttons carrying direction:
+
+   > make the right side 3 buttons have direction, the top one can have top right, middle can
+   > have right center, the bottom can have right bottom
+
+   Worth knowing what that could and could not become: there is **one** motor, so nothing can be
+   *located* in a corner. Direction is encoded in time instead — a rising envelope reads as up, a
+   falling one as down. See `src/fw/applib/haptics/CLAUDE.md`.
+7. **Edge-gated back swipe**, after researching how iOS does it:
+
+   > research how apple does swiping from the edge of the screen logic and lets make a really
+   > good detector for that
+
 ## Where it stands
 
-**All four features are written and build.** Features 1 and 2 were verified by screenshot in
-`qemu_emery`; features 3 and 4 have been compiled but never run. Nothing has been on real
-hardware.
+**Everything below is written, builds for obelix, and is published as an installable channel.
+John is testing it on the watch; nothing has been confirmed working there yet.** Treat every
+"should" in this file as unverified until he says otherwise.
 
-Verified by screenshot in the simulator:
+Latest build: `v200.0.0.1-47-g7d0cb89ce`. He was on `34ec6f2` for a while, which predates
+haptics, thumbnails and edge-back — if he reports something missing, **check Settings → Stone →
+Commit before debugging it.**
 
-- BACK on the watchface opens the app list, and BACK again returns to the watchface. The
-  top-level toggle works in both directions.
-- Golf is gone from the app list, which now ends: Settings, Music, Notifications, Alarms,
-  Watchfaces, Workout, Health, Timeline.
-- **Settings → Apps** exists, between System and Stone, and lists the main apps.
+### The seven pieces, and how sure we are
 
-**Not yet verified, and this is the whole of what is left to do:**
+| # | Feature | State |
+| --- | --- | --- |
+| 1 | BACK opens the app list, and toggles back | **Verified in `qemu_emery`** by screenshot, both directions |
+| 2 | Curated app list (Golf, Send Text, Reminders, Sports moved out) | **Verified in `qemu_emery`** — list ends Settings…Timeline, Golf gone |
+| 2b | Settings → Apps exists, between System and Stone | **Verified in `qemu_emery`** |
+| 3 | Grab-and-move reordering | Compiles. **Never run.** First on-watch writer of `lnc_ord`, and a write failure is silent by design |
+| 4 | Watchface picker (app `-101`) | Compiles. **Never run.** Likeliest failures: the paging animation, and whether opting out of the touch-nav bridge really leaves horizontal swipes to its own recognizers |
+| 5 | Real watchface miniatures | Compiles. **Never run.** Progressive: only faces that have been *worn* have a thumbnail |
+| 6 | Navigation haptics + directional side buttons | Compiles. **Never run**, and cannot be — QEMU has no vibe motor |
+| 7 | Edge-gated back swipe | Compiles. **Never run**, and cannot be — QEMU emits no gestures |
 
-- **Grab-and-move reordering** — that Select picks a row up, Up/Down moves it, Select drops it,
-  and the order survives a reboot. This is the medium-risk feature: it is the first on-watch
-  writer of `lnc_ord`, and a write failure is silent by design.
-- **The "Not in the list" heading**, with Golf under it, and that the selection skips the heading.
-- **The whole watchface picker.** It compiles and is registered as app `-101`, and not one line
-  of it has ever executed. Treat it as unproven. The most likely failure is the paging animation
-  (`property_animation_create` against a custom int16 implementation, copied from
-  `crumbs_layer.c`) and, on touch, whether opting out of the touch-nav bridge really does leave
-  horizontal swipes to the picker's own recognizers.
+### If you are picking this up cold, read these three first
 
-Testing stopped because John started the simulator in his own clone and `./sim` pkills every
-`qemu-pebble` process, so two of us cannot drive it at once. Everything above is a `./sim boot`
-away once it is free.
+1. **`src/fw/applib/haptics/CLAUDE.md`** — the haptic model, the four traps, and the driver
+   TODOs. Do not touch haptics without it.
+2. **"The simulator cannot test any of this"**, below. Two sessions have now lost time here.
+3. **"Build for obelix locally"**, below. `qemu_emery` is not a superset of obelix and a green
+   local build proved nothing for a whole feature.
 
-Two pieces of tooling bit here and will bite the next session:
+### What to do next, in order
 
-- **`./sim boot` exits 1, silently, on a fresh worktree.** `configured_board()` greps
-  `build/c4che/_cache.py`, a waf artifact that a CMake build never writes; under `set -o
-  pipefail` the failing `sed` makes the assignment fail and `set -e` exits with no message. Work
-  around it with `source ~/pebbleos-sdk-*/env.sh && source .venv/bin/activate && ./pbl configure
-  --board=qemu_emery && ./pbl build && ./pbl qemu`.
-- **`./pbl qemu` in a worktree puts its monitor socket in the *main clone's* `build/`**, not the
-  worktree's, presumably from the shared git common dir. So the socket is at
-  `~/repos/PebbleOS/build/qemu-mon.sock` even when the firmware being run is the worktree's.
-
-Neither belongs on this branch; they are `./sim`'s own bugs.
-
-**The "there is no ARM toolchain here" rule is out of date.** The SDK at `~/pebbleos-sdk-*`
-ships `arm-none-eabi-gcc`, and a full firmware build takes a couple of minutes locally. Compile
-before pushing; CI is no longer the only compiler.
-
-| Commit | What |
-| --- | --- |
-| `shell: let the middle button be assigned a tap action` | The `qlSingleClickSelect` preference and its "Tap Center" settings row |
-| `shell: make Back open the app list from the watchface` | The Stone click handlers and the click table |
-| `touch: let the watchface respond to gestures` | Controller gestures routed to the shell; CST816 swipe + long press dispatched |
-| `apps: keep only apps in the main list` | `stone_app_list_is_app()`, the launcher filter hook, Settings > Apps |
-| `settings: let the app list be reordered on the watch` | Grab-and-move reordering, written to `lnc_ord` |
-| `apps: add the watchface picker` | The carousel: a system app, entered by holding the face |
-| `ui: add navigation haptics` | `stone_haptics`: Tick/Select/Enter/Bump, amplitude-controlled |
-| `apps: show real watchface miniatures in the picker` | Progressive thumbnail cache, captured at the app switch |
-| `touch: require the back swipe to start at the left edge` | Back is an edge gesture, gated in one place |
-
-Everything is behind `CONFIG_STONE`, with upstream's handlers kept on the `#else` path, so
-`CONFIG_STONE=n` still builds and still behaves like stock.
-
-The research result that matters: **three of the four features were wiring, not new subsystems.**
-The launcher already filtered its list; app order already persisted to flash with a working write
-path; Quick Launch already configured click *and* hold per button. And there is already a full
-touch stack -- service, session gating, tap/pan/swipe recognizers, and a tiered touch-navigation
-bridge, mostly Core Devices 2026. **Do not write a touch service.**
-
-The thing that was *not* free: **watchfaces are deliberately excluded from touch.**
-`applib/touch_service.c:22-25` returns a NULL service state for `sys_app_is_watchface()` with the
-comment *"Touch is reserved for watchapps; watchfaces must not consume it."* That rule is right
-for apps and is unchanged; the shell gets gestures from the kernel event loop instead, exactly as
-it already gets buttons.
+1. **Wait for John's report on `7d0cb89`.** Most of the risk is in features 3–7 and only a wrist
+   can retire it.
+2. **Haptics will need tuning, not redesign.** Strength, character and motion are three tables in
+   `stone_haptics.c`; "too weak" or "the direction doesn't read" are table edits. Resist adding
+   per-call-site millisecond values — that is exactly what the vocabulary exists to prevent.
+3. **The two driver bugs in the CLAUDE.md TODO list are small and real**: VBAT compensation is
+   never enabled for normal playback (haptics fade as the battery drains), and
+   `vibe_get_braking_strength()` reads a CONT-mode register while playing in RAM mode, which
+   makes `brake_duration_ms` meaningless in every `.vibe` resource. Either is an afternoon.
+4. **Do not reroute the rest of the firmware's haptics through Stone wholesale.** The reason is
+   in the CLAUDE.md TODO: `vibes_enqueue_custom_pattern` is shared with alert-shaped callers, and
+   the boolean path carries the wearer's intensity preference. Call site by call site, UI only.
 
 ## Build for obelix locally, not just qemu_emery
 
@@ -333,6 +321,25 @@ If reordering appears to work but does not survive a reboot, the write is the su
 UI: `write_uuid_list_to_file` runs on KernelBackground via `system_task_add_callback`, and a
 failure there is silent by design.
 
+### Features 5–7, hardware only
+
+24. **Press UP, then SELECT, then DOWN.** They should feel *different* — rising, level, falling.
+    If they feel identical, the envelope shaping is not landing, and that is a redesign rather
+    than a retune.
+25. **Swipe right starting from the very left edge** → goes back, with a falling tick.
+26. **Swipe right starting from the middle of the screen** → *nothing should happen.* This half
+    is the point of the change; before it, that gesture went back from anywhere.
+27. **Wear a face, switch to another, then open the picker.** The first face should now show a
+    real miniature rather than its icon. A face you have never worn stays an icon — that is
+    correct, not a bug.
+28. **Swipe quickly through the picker.** If the ticks feel *intermittent* rather than dense, the
+    rate limit in `stone_haptics.c` wants **raising**, not lowering: the pattern service drops
+    anything enqueued while a pattern plays, so ticks that are too close together are lost.
+
+Haptic feedback is best reported in words — "too weak", "too buzzy", "the direction doesn't
+read" — rather than in milliseconds. The numbers have hardware constraints behind them, and the
+mapping from feel to number is what `stone_haptics.c` exists to own.
+
 ## Log
 
 - **2026-09-01** — branch created.
@@ -410,3 +417,15 @@ failure there is silent by design.
   compositor transitions, so the finger-tracked half of Apple's gesture cannot be built without
   compositor work. The edge *gate* shipped; `stone_edge_back.c` holds the projection maths
   (0.998 deceleration, ~half the velocity in pixels) ready for when there is something to drive.
+- **2026-09-01** — Added the haptic vocabulary and wired the three right-hand buttons and the back
+  gesture to it, after a full audit of the AW86225 driver. The audit's headline is worth carrying:
+  **essentially nothing here is a hardware ceiling.** The chip can chain eight RAM waveforms with
+  per-slot loop counts from a single command and stream arbitrary samples over RTP; the firmware
+  uses one waveform, one slot, looped forever, gated by start/stop. The gap is all driver.
+
+  Scope was deliberately held to the three buttons plus the back gesture. Rerouting the rest of
+  the firmware's haptics was started and **reverted**: `vibes_enqueue_custom_pattern` is shared
+  with alert-shaped callers, and the boolean path carries the wearer's Settings → Vibrations
+  intensity preference, so a wholesale reroute would silently drop it for battery warnings, the
+  hourly chime and Bluetooth disconnect. It is a TODO in the haptics CLAUDE.md, to be done call
+  site by call site.
