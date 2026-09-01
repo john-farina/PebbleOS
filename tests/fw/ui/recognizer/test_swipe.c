@@ -140,10 +140,66 @@ void test_swipe__too_crooked_fails(void) {
 
   prv_dispatch(r, TouchEvent_Touchdown, 10, 10);
   prv_advance_ms(20);
-  // major = 20 (> straightness min of 10), minor = 15 which exceeds half the major: too crooked.
-  prv_dispatch(r, TouchEvent_PositionUpdate, 30, 25);
+  // major = 40, minor = 30: past half the major plus the straightness slack, so this path is
+  // travelling diagonally rather than wandering while it starts.
+  prv_dispatch(r, TouchEvent_PositionUpdate, 50, 40);
 
   cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Failed);
+}
+
+// Contact noise in the first few samples must not fail the swipe. A ratio-only straightness test
+// is at its harshest exactly where the signal is weakest: 12px of travel with 7px of jitter is a
+// swipe beginning, not a diagonal.
+void test_swipe__early_jitter_survives(void) {
+  NEW_RECOGNIZER(r) = swipe_recognizer_create(prv_event_cb, NULL, ALL_DIRECTIONS);
+
+  prv_dispatch(r, TouchEvent_Touchdown, 10, 50);
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 22, 57);  // major 12, minor 7
+  cl_assert(recognizer_get_state(r) != RecognizerState_Failed);
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 70, 55);  // straightens out into a real swipe
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_Liftoff, 0, 0);
+
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Completed);
+  cl_assert_equal_i(swipe_recognizer_get_direction(r), SwipeDirection_Right);
+}
+
+// The duration budget is spent from when the finger moves, not from when it lands. Resting a
+// finger on the screen and then swiping is one gesture, and the pause is not part of it.
+void test_swipe__rest_before_moving_completes(void) {
+  NEW_RECOGNIZER(r) = swipe_recognizer_create(prv_event_cb, NULL, ALL_DIRECTIONS);
+
+  prv_dispatch(r, TouchEvent_Touchdown, 10, 50);
+  // Held still, well past SWIPE_MAX_DURATION_MS, drifting inside the stationary zone.
+  prv_advance_ms(500);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 12, 51);
+  prv_advance_ms(500);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 11, 50);
+  // Then swiped.
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 70, 50);
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_Liftoff, 0, 0);
+
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Completed);
+  cl_assert_equal_i(swipe_recognizer_get_direction(r), SwipeDirection_Right);
+}
+
+// A path under the minimum length that was still moving quickly at liftoff is a flick. The last
+// position update always lands before the finger leaves, so a fast gesture measures short.
+void test_swipe__short_fast_fling_completes(void) {
+  NEW_RECOGNIZER(r) = swipe_recognizer_create(prv_event_cb, NULL, ALL_DIRECTIONS);
+
+  prv_dispatch(r, TouchEvent_Touchdown, 10, 50);
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 10 + SWIPE_MIN_PX - 1, 50);  // 29px in 20ms
+  prv_advance_ms(20);
+  prv_dispatch(r, TouchEvent_Liftoff, 0, 0);
+
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Completed);
+  cl_assert_equal_i(swipe_recognizer_get_direction(r), SwipeDirection_Right);
 }
 
 // A fast, straight path whose finger then lingers past the max duration before
@@ -189,14 +245,18 @@ void test_swipe__length_at_boundary_completes(void) {
   cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Completed);
 }
 
-// One pixel short of the minimum length fails. Pins the off-by-one that a
-// 20px/60px pair leaves open; flipping `>=` to `>` reddens the boundary case.
+// One pixel short of the minimum length fails when it is not also a flick. Pins the off-by-one
+// that a 20px/60px pair leaves open; flipping `>=` to `>` reddens the boundary case. The path is
+// drawn slowly on purpose, so the liftoff velocity cannot carry it over the fling rule instead --
+// that rule has its own test.
 void test_swipe__length_below_boundary_fails(void) {
   NEW_RECOGNIZER(r) = swipe_recognizer_create(prv_event_cb, NULL, ALL_DIRECTIONS);
 
   prv_dispatch(r, TouchEvent_Touchdown, 10, 50);
   prv_advance_ms(20);
-  prv_dispatch(r, TouchEvent_PositionUpdate, 10 + SWIPE_MIN_PX - 1, 50);  // 29px
+  prv_dispatch(r, TouchEvent_PositionUpdate, 15, 50);
+  prv_advance_ms(150);
+  prv_dispatch(r, TouchEvent_PositionUpdate, 10 + SWIPE_MIN_PX - 1, 50);  // 29px, slowly
   prv_advance_ms(20);
   prv_dispatch(r, TouchEvent_Liftoff, 0, 0);
 

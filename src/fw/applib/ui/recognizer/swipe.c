@@ -20,6 +20,24 @@
 // value comes from the reference PT2 touch-nav gesture spec.
 #define SWIPE_STRAIGHTNESS_MIN_PX (10)
 
+// Minor-axis excursion allowed on top of the half-of-major ratio. A pure ratio is applied first
+// when the travel is barely past SWIPE_STRAIGHTNESS_MIN_PX, where a few pixels of contact noise
+// are most of the major axis -- so twelve pixels right and seven pixels of jitter failed the
+// swipe permanently, before the wearer had finished starting it. The corridor is what makes the
+// check mean "this path is going somewhere else" rather than "this path has begun".
+#define SWIPE_STRAIGHTNESS_SLACK_PX (6)
+
+// A flick lifts off while it is still moving, so it travels less than a deliberate drag covering
+// the same intent. Below SWIPE_MIN_LENGTH_PX a path is still a swipe if it was going this fast
+// when contact ended; both bounds must be met, so a tap that slides a little is not promoted.
+#define SWIPE_FLING_MIN_LENGTH_PX (24)
+#define SWIPE_FLING_MIN_VELOCITY_PX_S (600)
+
+// How far the finger may sit from the touchdown point and still count as stationary. The duration
+// budget is spent from the moment it first moves further than this, not from touchdown, so
+// resting a finger on the screen before flicking does not consume the whole window.
+#define SWIPE_MOTION_START_PX (4)
+
 // Number of most-recent position samples retained for the velocity estimate.
 #define SWIPE_VELOCITY_SAMPLE_COUNT (3)
 
@@ -40,10 +58,12 @@ struct SwipeRecognizerData {
 
   // Gesture state
   struct {
-    GPoint touch_down_point;   // Touchdown point; the path is measured from here
-    GPoint last_point;         // Most recent position update point (liftoff coords are ignored)
-    RtcTicks touch_down_ticks; // Touchdown time, used for the duration check
-    SwipeDirection direction;  // Recognized direction, valid once Completed
+    GPoint touch_down_point;     // Touchdown point; the path is measured from here
+    GPoint last_point;           // Most recent position update point (liftoff coords are ignored)
+    RtcTicks touch_down_ticks;   // Touchdown time
+    RtcTicks motion_start_ticks; // When the finger first moved; the duration check runs from here
+    bool moving;                 // Whether the finger has left the stationary zone yet
+    SwipeDirection direction;    // Recognized direction, valid once Completed
     // Velocity sample ring buffer; sample_head indexes the newest, filled up to sample_count entries
     SwipeVelocitySample samples[SWIPE_VELOCITY_SAMPLE_COUNT];
     uint8_t sample_head;
@@ -65,8 +85,19 @@ static uint32_t prv_ticks_to_ms(RtcTicks ticks) {
   return (uint32_t)((ticks * MS_PER_SECOND) / RTC_TICKS_HZ);
 }
 
+//! Time since the gesture actually started moving. While the finger is still within
+//! SWIPE_MOTION_START_PX of where it landed, the clock is repeatedly restarted, so it ends up
+//! anchored at the last sample before the movement began.
 static uint32_t prv_touch_duration_ms(const SwipeRecognizerData *data) {
-  return prv_ticks_to_ms(sys_get_ticks() - data->state.touch_down_ticks);
+  return prv_ticks_to_ms(sys_get_ticks() - data->state.motion_start_ticks);
+}
+
+//! Whether a path has wandered off its own major axis far enough to be going somewhere else.
+//! Shared by the mid-gesture check and the liftoff check so a path that survived the drag cannot
+//! be rejected by a stricter rule at the end.
+static bool prv_too_crooked(int32_t major, int32_t minor) {
+  return (major > SWIPE_STRAIGHTNESS_MIN_PX) &&
+         (minor > ((major / 2) + SWIPE_STRAIGHTNESS_SLACK_PX));
 }
 
 static void prv_record_sample(SwipeRecognizerData *data, GPoint point, RtcTicks ticks) {
@@ -131,6 +162,8 @@ static void prv_handle_touch_event(Recognizer *recognizer, const TouchEvent *tou
       data->state.touch_down_point = point;
       data->state.last_point = point;
       data->state.touch_down_ticks = now;
+      data->state.motion_start_ticks = now;
+      data->state.moving = false;
       data->state.direction = SwipeDirection_None;
       data->state.sample_count = 0;
       data->state.sample_head = 0;
@@ -140,7 +173,8 @@ static void prv_handle_touch_event(Recognizer *recognizer, const TouchEvent *tou
 
     case TouchEvent_PositionUpdate: {
       const GPoint point = GPoint(touch_event->x, touch_event->y);
-      prv_record_sample(data, point, sys_get_ticks());
+      const RtcTicks now = sys_get_ticks();
+      prv_record_sample(data, point, now);
       data->state.last_point = point;
 
       const GPoint total_delta = gpoint_sub(point, data->state.touch_down_point);
@@ -149,9 +183,18 @@ static void prv_handle_touch_event(Recognizer *recognizer, const TouchEvent *tou
       const int32_t major = MAX(adx, ady);
       const int32_t minor = MIN(adx, ady);
 
+      // Start the duration clock at the first sample that has actually moved.
+      if (!data->state.moving) {
+        if (major > SWIPE_MOTION_START_PX) {
+          data->state.moving = true;
+        } else {
+          data->state.motion_start_ticks = now;
+        }
+      }
+
       // Too crooked: once the path is committed (major axis past the drag threshold), the minor-axis
-      // projection must stay within half the major axis, otherwise this is not a straight swipe.
-      if ((major > SWIPE_STRAIGHTNESS_MIN_PX) && ((minor * 2) > major)) {
+      // projection must stay inside the straightness corridor, otherwise this is not a straight swipe.
+      if (prv_too_crooked(major, minor)) {
         recognizer_transition_state(recognizer, RecognizerState_Failed);
         break;
       }
@@ -172,10 +215,16 @@ static void prv_handle_touch_event(Recognizer *recognizer, const TouchEvent *tou
       const int32_t major = MAX(adx, ady);
       const int32_t minor = MIN(adx, ady);
 
-      const bool long_enough = (major >= SWIPE_MIN_LENGTH_PX);
+      // A short path still counts when it was moving fast at liftoff: the last position update
+      // lands before the finger leaves, so a flick is always measured short.
+      const GPoint velocity = prv_compute_velocity(data);
+      const int32_t major_velocity = (adx >= ady) ? ABS(velocity.x) : ABS(velocity.y);
+      const bool long_enough = (major >= SWIPE_MIN_LENGTH_PX) ||
+                               ((major >= SWIPE_FLING_MIN_LENGTH_PX) &&
+                                (major_velocity >= SWIPE_FLING_MIN_VELOCITY_PX_S));
       const bool fast_enough = (prv_touch_duration_ms(data) <= SWIPE_MAX_DURATION_MS);
-      // Clear major axis: the minor-axis projection is within half the major axis.
-      const bool has_clear_major = (major > 0) && ((minor * 2) <= major);
+      // Clear major axis: the minor-axis projection is inside the straightness corridor.
+      const bool has_clear_major = (major > 0) && !prv_too_crooked(major, minor);
 
       const SwipeDirection direction = prv_direction_from_delta(total_delta);
       const bool direction_allowed = (data->config.direction_mask & direction) != 0;
