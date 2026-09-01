@@ -18,6 +18,27 @@ polls `GET $bugUrl/ota/latest` and already understands the response shape, so
 setting `bugUrl` to the deployed worker is the whole thing — no protocol work
 and no firmware change.
 
+## Installing a build by hand
+
+You do not need a forked companion app to put a Stone build on the watch. The
+official app has a sideload path — `Settings` → **Show debug options**, then the
+Devices tab → tap the watch → `Firmware Update Debug` → **Sideload FW** — and it
+takes any `.pbz` from the phone's Files.
+
+The easiest way to get one there is from the channel server, since it serves
+bundles over plain HTTPS with no auth:
+
+```
+https://<your channel server>/bundles/stone/stone_obelix_pvt_<version>.pbz
+```
+
+Open that in Safari on the phone and it lands in Files. GitHub's build artifacts
+work too, but they are zipped and behind a login, which is a much worse
+experience on a phone.
+
+What the app fork adds is the *automatic* half: an update card when a build
+lands, rather than you going and fetching one.
+
 ## Everyday use
 
 ```shell
