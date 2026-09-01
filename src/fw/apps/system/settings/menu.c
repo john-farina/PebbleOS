@@ -16,6 +16,9 @@
 #endif
 #include "health.h"
 #include "vibe_patterns.h"
+#ifdef CONFIG_STONE
+#include "stone.h"
+#endif
 
 #include "applib/ui/app_window_stack.h"
 #include "system/passert.h"
@@ -35,6 +38,9 @@ static const SettingsModuleGetMetadata s_submodule_registry[] = {
   [SettingsMenuItemThemes]        = settings_themes_get_info,
 #endif
   [SettingsMenuItemSystem]        = settings_system_get_info,
+#ifdef CONFIG_STONE
+  [SettingsMenuItemStone]         = settings_stone_get_info,
+#endif
 };
 
 const SettingsModuleMetadata *settings_menu_get_submodule_info(SettingsMenuItem category) {

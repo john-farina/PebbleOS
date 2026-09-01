@@ -42,6 +42,11 @@ static const uint32_t SETTINGS_MENU_ICON_RESOURCES[SettingsMenuItem_Count] = {
 #endif
   [SettingsMenuItemActivity] = RESOURCE_ID_SETTINGS_MENU_ICON_BACKGROUND_APP,
   [SettingsMenuItemSystem] = RESOURCE_ID_SETTINGS_MENU_ICON_SYSTEM,
+#ifdef CONFIG_STONE
+  // Reuses the System icon: adding a resource would mean touching the
+  // resource manifest, for no gain over an icon that already reads right.
+  [SettingsMenuItemStone] = RESOURCE_ID_SETTINGS_MENU_ICON_SYSTEM,
+#endif
 };
 #endif
 
