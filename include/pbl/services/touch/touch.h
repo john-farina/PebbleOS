@@ -16,6 +16,19 @@ typedef enum TouchState {
 typedef enum TouchGesture {
   TouchGesture_Tap,
   TouchGesture_DoubleTap,
+#ifdef CONFIG_STONE
+  // Appended, so the two upstream values keep their numbering.
+  //
+  // These are the controller's own gestures, not the software recognizers in
+  // applib/ui/recognizer/. That distinction matters: the recognizers never run on a watchface,
+  // because the touch service deliberately hands watchfaces a NULL state, so a controller
+  // gesture is the only kind a watchface can ever see.
+  TouchGesture_SwipeUp,
+  TouchGesture_SwipeDown,
+  TouchGesture_SwipeLeft,
+  TouchGesture_SwipeRight,
+  TouchGesture_LongPress,
+#endif
 } TouchGesture;
 
 void touch_init(void);

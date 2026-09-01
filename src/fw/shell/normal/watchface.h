@@ -20,3 +20,12 @@ void watchface_launch_default(const CompositorTransition *animation);
 void watchface_start_low_power(void);
 
 void watchface_reset_click_manager(void);
+
+#if defined(CONFIG_STONE) && defined(CONFIG_TOUCH)
+//! Handle a controller gesture (tap, swipe, long press) delivered while a watchface is running.
+//!
+//! The applib touch service refuses watchfaces a service state on purpose, so neither the
+//! recognizers nor the touch-nav bridge ever reach one. Gestures therefore arrive here from the
+//! kernel event loop, exactly as button events already do.
+void watchface_handle_gesture_event(PebbleEvent *e);
+#endif

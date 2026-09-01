@@ -365,6 +365,19 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
           light_enable_interaction();
         }
       }
+// Only the normal shell: the PRF and SDK shells supply their own watchface with no gesture
+// handler, and event_loop.c includes shell/normal/watchface.h regardless of which one is linked.
+#if defined(CONFIG_STONE) && defined(CONFIG_TOUCH) && \
+    !defined(CONFIG_RECOVERY_FW) && !defined(CONFIG_SHELL_SDK)
+      // A running watchface never sees touch: applib's touch service hands watchfaces a NULL
+      // state on purpose ("Touch is reserved for watchapps"), so neither the recognizers nor the
+      // touch-nav bridge reach one. That rule is right for apps and we are not changing it --
+      // instead the shell gets gestures the same way it already gets buttons, from here, which
+      // is what lets the face respond to a hold or a swipe without any app-side touch at all.
+      if (app_manager_is_watchface_running()) {
+        watchface_handle_gesture_event(e);
+      }
+#endif
       return;
     }
 

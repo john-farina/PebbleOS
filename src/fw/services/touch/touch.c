@@ -361,6 +361,29 @@ void touch_handle_gesture(TouchGesture gesture, int16_t x, int16_t y) {
       PBL_ANALYTICS_ADD(gesture_double_tap_count, 1);
       prv_put_gesture_event(GestureEvent_DoubleTap, x, y);
       break;
+#ifdef CONFIG_STONE
+    // No analytics counters for these: new metrics mean editing the shared metrics table, a
+    // much larger permanent diff than these gestures are worth.
+    //
+    // Left-hand mode turns the display 180 degrees and prv_apply_rotation above mirrors the
+    // coordinates to match. A direction has to turn with them, or a swipe toward the wearer's
+    // fingertips would report the opposite way round on a left-handed watch.
+    case TouchGesture_SwipeUp:
+      prv_put_gesture_event(s_rotated ? GestureEvent_SwipeDown : GestureEvent_SwipeUp, x, y);
+      break;
+    case TouchGesture_SwipeDown:
+      prv_put_gesture_event(s_rotated ? GestureEvent_SwipeUp : GestureEvent_SwipeDown, x, y);
+      break;
+    case TouchGesture_SwipeLeft:
+      prv_put_gesture_event(s_rotated ? GestureEvent_SwipeRight : GestureEvent_SwipeLeft, x, y);
+      break;
+    case TouchGesture_SwipeRight:
+      prv_put_gesture_event(s_rotated ? GestureEvent_SwipeLeft : GestureEvent_SwipeRight, x, y);
+      break;
+    case TouchGesture_LongPress:
+      prv_put_gesture_event(GestureEvent_LongPress, x, y);
+      break;
+#endif
     default:
       break;
   }

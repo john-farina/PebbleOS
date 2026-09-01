@@ -10,6 +10,9 @@
 #include "kernel/event_loop.h"
 #include "kernel/low_power.h"
 #include "popups/timeline/peek.h"
+#if defined(CONFIG_STONE) && defined(CONFIG_TOUCH)
+#include "pbl/services/touch/touch_session.h"
+#endif
 #include "process_management/app_manager.h"
 #include "process_management/pebble_process_md.h"
 #include "pbl/services/compositor/compositor_transitions.h"
@@ -49,11 +52,16 @@ static bool prv_should_ignore_button_click(void) {
   return false;
 }
 
+// Stone reaches the same launch by button id instead, so a gesture -- which has no recognizer to
+// read one off -- can perform it too. Guarded out rather than left unreferenced: the build is
+// -Wall -Werror, so an unused static is a failed build, not a warning.
+#ifndef CONFIG_STONE
 static void prv_launch_app_via_button(AppLaunchEventConfig *config,
                                       ClickRecognizerRef recognizer) {
   config->common.button = click_recognizer_get_button_id(recognizer);
   app_manager_put_launch_app_event(config);
 }
+#endif
 
 static bool prv_is_combo_pressed(uint8_t combo_buttons) {
   return (s_buttons_pressed & combo_buttons) == combo_buttons;
@@ -215,6 +223,7 @@ static void prv_quick_launch_handler(ClickRecognizerRef recognizer, void *data) 
                               APP_QUICK_LAUNCH_ACTION_HOLD);
 }
 
+#ifndef CONFIG_STONE
 static void prv_launch_up_down(ClickRecognizerRef recognizer, void *data) {
   ButtonId button = click_recognizer_get_button_id(recognizer);
   
@@ -228,6 +237,7 @@ static void prv_launch_up_down(ClickRecognizerRef recognizer, void *data) {
   prv_launch_quick_launch_app(app_id, button, APP_LAUNCH_SYSTEM,
                               APP_QUICK_LAUNCH_ACTION_TAP);
 }
+#endif  // !CONFIG_STONE
 
 static void prv_configure_click_handler(ButtonId button_id, ClickHandler single_click_handler) {
   ClickConfig *cfg = &s_click_manager.recognizers[button_id].config;
@@ -236,6 +246,7 @@ static void prv_configure_click_handler(ButtonId button_id, ClickHandler single_
   cfg->click.handler = single_click_handler;
 }
 
+#ifndef CONFIG_STONE
 static void prv_launch_launcher_app(ClickRecognizerRef recognizer, void *data) {
   static const LauncherMenuArgs s_launcher_args = { .reset_scroll = true };
   prv_launch_app_via_button(&(AppLaunchEventConfig) {
@@ -250,8 +261,23 @@ static void prv_dismiss_timeline_peek(ClickRecognizerRef recognizer, void *data)
   }
   timeline_peek_dismiss();
 }
+#endif  // !CONFIG_STONE
 
 #ifdef CONFIG_STONE
+// Stone addresses the watchface by button id rather than by ClickRecognizerRef, because the same
+// four actions have to be reachable two ways: from a click, and from a controller gesture. A
+// gesture has no recognizer to carry a button id, so the actions take one directly and the click
+// handler is a thin wrapper that reads it off the recognizer.
+
+static void prv_launcher_action(ButtonId button) {
+  static const LauncherMenuArgs s_launcher_args = { .reset_scroll = true };
+  app_manager_put_launch_app_event(&(AppLaunchEventConfig) {
+    .id = APP_ID_LAUNCHER_MENU,
+    .common.button = button,
+    .common.args = &s_launcher_args,
+  });
+}
+
 // Back means one thing everywhere: go back a level. The watchface is the bottom of the stack, so
 // there is normally nothing to go back to -- which is what leaves the press free to mean "up to
 // the app list", the way pressing the crown on an Apple Watch face opens the Home Screen. A peek
@@ -259,45 +285,97 @@ static void prv_dismiss_timeline_peek(ClickRecognizerRef recognizer, void *data)
 //
 // timeline_peek_get_item_id() yields UUID_INVALID when nothing is peeking, so telling the two
 // cases apart needs no new peek API.
-static void prv_back_click(ClickRecognizerRef recognizer, void *data) {
-  if (prv_is_any_combo_active()) {
-    return;
-  }
+static void prv_back_action(ButtonId button) {
   TimelineItemId peeked_id;
   timeline_peek_get_item_id(&peeked_id);
   if (!uuid_is_invalid(&peeked_id)) {
-    // Deliberately the upstream handler rather than timeline_peek_dismiss() directly: it keeps
-    // that function referenced in this build, so CONFIG_STONE=n and =y both compile clean.
-    prv_dismiss_timeline_peek(recognizer, data);
+    timeline_peek_dismiss();
     return;
   }
-  prv_launch_launcher_app(recognizer, data);
+  prv_launcher_action(button);
 }
 
-// Select still opens the launcher unless the wearer has assigned it something else, so the default
-// is unchanged and the button becomes configurable for a tap the same way it already is for a
-// hold.
-static void prv_select_click(ClickRecognizerRef recognizer, void *data) {
+// Up and Down do nothing unless they have been assigned an app, which is upstream's behaviour.
+// Select additionally falls back to the launcher, so the middle button keeps working as it always
+// has until the wearer assigns it something.
+static void prv_tap_action(ButtonId button) {
+  if (quick_launch_single_click_is_enabled(button)) {
+    prv_launch_quick_launch_app(quick_launch_single_click_get_app(button), button,
+                                APP_LAUNCH_SYSTEM, APP_QUICK_LAUNCH_ACTION_TAP);
+    return;
+  }
+  if (button == BUTTON_ID_SELECT) {
+    prv_launcher_action(button);
+  }
+}
+
+static void prv_stone_click(ClickRecognizerRef recognizer, void *data) {
   if (prv_is_any_combo_active()) {
     return;
   }
-  if (quick_launch_single_click_is_enabled(BUTTON_ID_SELECT)) {
-    prv_launch_quick_launch_app(quick_launch_single_click_get_app(BUTTON_ID_SELECT),
-                                BUTTON_ID_SELECT, APP_LAUNCH_SYSTEM,
-                                APP_QUICK_LAUNCH_ACTION_TAP);
+  const ButtonId button = click_recognizer_get_button_id(recognizer);
+  if (button == BUTTON_ID_BACK) {
+    prv_back_action(button);
+  } else {
+    prv_tap_action(button);
+  }
+}
+
+#ifdef CONFIG_TOUCH
+// Swipes take the same meaning they have everywhere else in the firmware, as the touch-nav bridge
+// defines it (applib/ui/recognizer/touch_nav.c): right is Back, left is Select, and the vertical
+// pair follows the content-scroll convention where the finger moves opposite to the content. The
+// watchface has nothing to scroll, but a second, face-only rule would be one more thing to learn
+// for no gain.
+void watchface_handle_gesture_event(PebbleEvent *e) {
+  if (prv_should_ignore_button_click()) {
     return;
   }
-  prv_launch_launcher_app(recognizer, data);
+  if (prv_is_any_combo_active()) {
+    return;
+  }
+  // The whole reason upstream gates raw touch: a sleeve brushing an idle face must not navigate.
+  // touch_session_is_active() is armed by a deliberate act -- a button, or the backlight wake
+  // gesture -- and its documentation names the idle watchface as the one surface it guards, which
+  // is exactly the surface this handler serves. Without it, swipe-to-open-apps fires in a pocket.
+  if (!touch_session_is_active()) {
+    return;
+  }
+
+  switch (e->gesture.event.type) {
+    case GestureEvent_SwipeRight:
+      prv_back_action(BUTTON_ID_BACK);
+      break;
+    case GestureEvent_SwipeLeft:
+      prv_tap_action(BUTTON_ID_SELECT);
+      break;
+    case GestureEvent_SwipeUp:
+      prv_tap_action(BUTTON_ID_DOWN);
+      break;
+    case GestureEvent_SwipeDown:
+      prv_tap_action(BUTTON_ID_UP);
+      break;
+    case GestureEvent_Tap:
+    case GestureEvent_DoubleTap:
+    case GestureEvent_LongPress:
+      // Tap and double tap already drive the backlight from the kernel and must not also
+      // navigate, or waking the screen would launch something. Long press is the watchface
+      // carousel's entry gesture and is wired up with the carousel itself.
+      break;
+  }
 }
+#endif  // CONFIG_TOUCH
 #endif  // CONFIG_STONE
 
 static void prv_watchface_configure_click_handlers(void) {
+#ifdef CONFIG_STONE
+  prv_configure_click_handler(BUTTON_ID_UP, prv_stone_click);
+  prv_configure_click_handler(BUTTON_ID_DOWN, prv_stone_click);
+  prv_configure_click_handler(BUTTON_ID_SELECT, prv_stone_click);
+  prv_configure_click_handler(BUTTON_ID_BACK, prv_stone_click);
+#else
   prv_configure_click_handler(BUTTON_ID_UP, prv_launch_up_down);
   prv_configure_click_handler(BUTTON_ID_DOWN, prv_launch_up_down);
-#ifdef CONFIG_STONE
-  prv_configure_click_handler(BUTTON_ID_SELECT, prv_select_click);
-  prv_configure_click_handler(BUTTON_ID_BACK, prv_back_click);
-#else
   prv_configure_click_handler(BUTTON_ID_SELECT, prv_launch_launcher_app);
   prv_configure_click_handler(BUTTON_ID_BACK, prv_dismiss_timeline_peek);
 #endif

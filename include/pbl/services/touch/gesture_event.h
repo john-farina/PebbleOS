@@ -9,6 +9,15 @@
 typedef enum GestureEventType {
   GestureEvent_Tap,
   GestureEvent_DoubleTap,
+#ifdef CONFIG_STONE
+  // Appended so the upstream values keep their numbering. `type` is a :8 bitfield, so there is
+  // room for these without changing the size of PebbleGestureEvent.
+  GestureEvent_SwipeUp,
+  GestureEvent_SwipeDown,
+  GestureEvent_SwipeLeft,
+  GestureEvent_SwipeRight,
+  GestureEvent_LongPress,
+#endif
 } GestureEventType;
 
 //! Gesture event data, carried directly in PebbleGestureEvent

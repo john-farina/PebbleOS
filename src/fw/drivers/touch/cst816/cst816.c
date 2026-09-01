@@ -282,6 +282,25 @@ void touch_sensor_init(void) {
   touch_sensor_set_enabled(false);
 }
 
+#ifdef CONFIG_STONE
+// The controller names its swipe directions in its own frame, so they need the same axis
+// inversion the reported point gets a few lines below -- otherwise a board that mirrors X would
+// report a leftward swipe for a finger travelling right.
+static TouchGesture prv_swipe_gesture(uint8_t id) {
+  const bool horizontal = (id == CST816_GESTURE_LEFT) || (id == CST816_GESTURE_RIGHT);
+  bool positive = (id == CST816_GESTURE_RIGHT) || (id == CST816_GESTURE_DOWN);
+
+  if (horizontal ? CST816->invert_x_axis : CST816->invert_y_axis) {
+    positive = !positive;
+  }
+
+  if (horizontal) {
+    return positive ? TouchGesture_SwipeRight : TouchGesture_SwipeLeft;
+  }
+  return positive ? TouchGesture_SwipeDown : TouchGesture_SwipeUp;
+}
+#endif
+
 static void prv_process_pending_messages(void* context) {
   bool rv;
   s_callback_scheduled = false;
@@ -337,6 +356,17 @@ static void prv_process_pending_messages(void* context) {
     case CST816_GESTURE_DOUBLE_CLICK:
       touch_handle_gesture(TouchGesture_DoubleTap, point.x, point.y);
       break;
+#ifdef CONFIG_STONE
+    case CST816_GESTURE_UP:
+    case CST816_GESTURE_DOWN:
+    case CST816_GESTURE_LEFT:
+    case CST816_GESTURE_RIGHT:
+      touch_handle_gesture(prv_swipe_gesture(id), point.x, point.y);
+      break;
+    case CST816_GESTURE_LONG_PRESS:
+      touch_handle_gesture(TouchGesture_LongPress, point.x, point.y);
+      break;
+#endif
     default:
       break;
   }
