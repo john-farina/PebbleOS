@@ -4,37 +4,29 @@ The firmware and CI halves are done. What remains is blocked on decisions or
 credentials rather than on work, and this page exists so none of it gets
 re-derived from scratch.
 
-## Blocked on a hosting decision
+## Blocked on a Cloudflare account
 
-### Publishing builds
+### Deploying the channel server
 
-`stone-build.yml` produces a bundle and a `manifest.json` describing it, but
-**nothing publishes them anywhere durable**. Where builds get served from
-depends on where the channel server runs:
+The server is written and tested — `tools/stone/channel/`, 28 cases, no
+wrangler and no network needed to run them. What is left is one deploy:
 
-| Option | |
-| --- | --- |
-| Release assets | Public, no auth, but a tag per build and tag churn in `git describe` |
-| Artifacts | No tags, but expire after 90 days and need a token to fetch |
+```shell
+cd tools/stone/channel
+npx wrangler kv namespace create STONE     # paste the id into wrangler.toml
+npx wrangler secret put STONE_PUBLISH_TOKEN
+npx wrangler secret put STONE_CONTROL_TOKEN
+npx wrangler deploy
+```
 
-Picking before the server exists would be guessing, and the wrong guess means
-either tag churn or an auth design that does not fit the host.
+Then add `STONE_CHANNEL_URL` and `STONE_PUBLISH_TOKEN` to this repository's
+secrets. Until both exist CI skips publishing and the bundle is still an
+artifact you can sideload by hand.
 
-### The channel server
-
-Small: a KV of `{channel → latest build}`, plus
-
-- `GET /ota/latest` in eng-dash's exact shape —
-  `{version, notes, is_downgrade, artifacts:[{url}]}`, `204` when nothing is new
-- `PUT /channel` to switch
-
-It serves bundles as built and does no byte surgery: the boot-priority re-stamp
-that makes a rollback actually boot happens in CI, with
-`tools/stone/restamp_priority.py`. See {doc}`recovery`.
-
-The shape is fixed by `EngDashOta.kt` in the companion app, which already speaks
-it. Query parameters are `device_serial`, `hardware_version` and
-`current_version`.
+The workload — one phone polling a few times an hour — sits inside Cloudflare's
+free tier with several orders of magnitude to spare, and bundles live in the
+same KV namespace rather than in release assets, so there is nothing else to
+pay for or set up. See `tools/stone/channel/README.md` for why.
 
 ## Blocked on Apple credentials
 
@@ -63,23 +55,7 @@ Name it without "Pebble" (upstream's README asks the trademark stay
 referential), and uninstall the official app once yours works — both would fight
 over the watch's BLE companion connection.
 
-## Blocked on the channel server
-
-### Channel lifecycle and cleanup
-
-When a `feat/*` branch merges, its channel is dead. The rule the design turns
-on: **nothing is deleted until the watch is off it.** A channel goes
-`active → merged → retired → deleted`, and the merged→retired step is gated on
-migrating the device to `stone` first — otherwise it strands silently on
-firmware that will never update again.
-
-Retention: keep the last 3 builds per channel; never delete the running build,
-the `stone` head, anything pinned, or any loghash dictionary for firmware that
-ever ran.
-
-Rebased `feat/*` branches orphan their builds' SHAs. Those bundles stay
-installable — key builds by `(branch, commit, build number)` and mark
-pre-rebase ones stale rather than deleting them.
+## Not built yet
 
 ### The branch-picker watchapp
 
@@ -95,8 +71,9 @@ files on both sides. Same UX, much larger permanent diff.
 ## Open questions
 
 - **Boot priority on real hardware.** Inferred from `tools/pblboot.py`; the
-  bootloader is not in this repo. The channel server's re-stamp design depends
-  on it. See {doc}`recovery`.
+  bootloader is not in this repo. Whether rolling back needs
+  `tools/stone/restamp_priority.py` at all depends on it, and so does whether
+  installing an older build works without it. See {doc}`recovery`.
 - **Whether the official app would offer a Core release over a Stone build.**
   Decided in the app, not the firmware. With your own app build pointed at your
   own server it is moot, but worth knowing before then.
