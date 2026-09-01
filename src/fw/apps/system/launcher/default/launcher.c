@@ -4,6 +4,7 @@
 #include "launcher.h"
 
 #include "menu_layer.h"
+#include "stone_app_list.h"
 
 #include "applib/app.h"
 #include "applib/app_focus_service.h"
@@ -51,7 +52,15 @@ static void prv_will_focus(bool in_focus) {
 
 static bool prv_app_filter_callback(PBL_UNUSED AppMenuDataSource *source, AppInstallEntry *entry) {
   // Skip watchfaces and hidden apps
-  return (!app_install_entry_is_watchface(entry) && !app_install_entry_is_hidden((entry)));
+  if (app_install_entry_is_watchface(entry) || app_install_entry_is_hidden((entry))) {
+    return false;
+  }
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+  // The rest live in Settings > Apps. Same predicate, so the two lists cannot disagree.
+  return stone_app_list_is_app(entry);
+#else
+  return true;
+#endif
 }
 
 static void prv_data_changed(void *context) {

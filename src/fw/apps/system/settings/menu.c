@@ -18,6 +18,7 @@
 #include "vibe_patterns.h"
 #ifdef CONFIG_STONE
 #include "stone.h"
+#include "stone_apps.h"
 #endif
 
 #include "applib/ui/app_window_stack.h"
@@ -39,6 +40,7 @@ static const SettingsModuleGetMetadata s_submodule_registry[] = {
 #endif
   [SettingsMenuItemSystem]        = settings_system_get_info,
 #ifdef CONFIG_STONE
+  [SettingsMenuItemStoneApps]     = settings_stone_apps_get_info,
   [SettingsMenuItemStone]         = settings_stone_get_info,
 #endif
 };
