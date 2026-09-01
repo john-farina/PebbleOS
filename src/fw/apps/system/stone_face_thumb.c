@@ -22,22 +22,52 @@
 #include "pbl/services/system_task.h"
 #include "process_management/app_install_manager.h"
 #include "pbl/services/settings/settings_file.h"
+#include "pbl/services/settings/settings_raw_iter.h"
+#include "pbl/logging/logging.h"
 #include "system/passert.h"
 
+#include <inttypes.h>
 #include <string.h>
 
 //! One file for every face rather than one file each: PFS allocates whole 4KB pages, so a file
 //! per thumbnail would waste most of a page apiece.
 #define THUMB_FILE_NAME "stone_wf_thumbs"
-//! Room for a good number of faces plus the settings file's own overhead and rewrite headroom.
-#define THUMB_FILE_SIZE (STONE_FACE_THUMB_BYTES * 24)
+
+//! How many faces the cache holds. Beyond this the file is full and further captures are refused
+//! -- loudly, see prv_store. Eight covers any realistic collection, and at ~5KB apiece the whole
+//! cache is about 1% of the 5MB filesystem.
+#define THUMB_MAX_FACES (8)
+
+//! Sized for every chunk of every face, plus each record's header and key, plus headroom for the
+//! settings layer to compact into.
+#define THUMB_FILE_SIZE \
+  (((STONE_FACE_THUMB_BYTES + (STONE_FACE_THUMB_CHUNKS * 32)) * THUMB_MAX_FACES) * 2)
 
 #define SCALE (3)
+
+//! A record holds one chunk of one face. The chunk index is part of the key rather than the value
+//! so a partially written thumbnail cannot be read back as a whole one: a missing chunk is a
+//! missing key, and the load fails.
+typedef struct PACKED {
+  Uuid uuid;
+  uint8_t chunk;
+} ThumbKey;
+
+_Static_assert(STONE_FACE_THUMB_CHUNK_BYTES <= SETTINGS_VAL_MAX_LEN,
+               "a thumbnail chunk must fit in one settings record");
+_Static_assert(sizeof(ThumbKey) <= SETTINGS_KEY_MAX_LEN, "thumbnail key too long");
 
 typedef struct {
   Uuid uuid;
   uint8_t pixels[];
 } ThumbWrite;
+
+//! Bytes in chunk @p i. Only the last one is short.
+static size_t prv_chunk_len(uint8_t i) {
+  const size_t offset = (size_t)i * STONE_FACE_THUMB_CHUNK_BYTES;
+  const size_t remaining = STONE_FACE_THUMB_BYTES - offset;
+  return (remaining < STONE_FACE_THUMB_CHUNK_BYTES) ? remaining : STONE_FACE_THUMB_CHUNK_BYTES;
+}
 
 // Runs on the system task: pfs_write erases and programs NOR flash, which is far too slow to sit
 // inside an app switch.
@@ -45,10 +75,30 @@ static void prv_store(void *ctx) {
   ThumbWrite *write = ctx;
   SettingsFile file;
 
-  if (settings_file_open(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE) == S_SUCCESS) {
-    settings_file_set(&file, &write->uuid, sizeof(Uuid), write->pixels, STONE_FACE_THUMB_BYTES);
-    settings_file_close(&file);
+  const status_t open_rv = settings_file_open(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE);
+  if (open_rv != S_SUCCESS) {
+    // Every earlier version of this function discarded its status, which is why a cache that
+    // stored nothing at all looked exactly like a cache of faces that had never been worn.
+    PBL_LOG_WRN("thumb: could not open the cache (%" PRId32 ")", (int32_t)open_rv);
+    kernel_free(write);
+    return;
   }
+
+  for (uint8_t i = 0; i < STONE_FACE_THUMB_CHUNKS; i++) {
+    const ThumbKey key = { .uuid = write->uuid, .chunk = i };
+    const status_t rv =
+        settings_file_set(&file, &key, sizeof(key),
+                          &write->pixels[(size_t)i * STONE_FACE_THUMB_CHUNK_BYTES],
+                          prv_chunk_len(i));
+    if (rv != S_SUCCESS) {
+      // A partial thumbnail is never served: prv_load requires every chunk. E_OUT_OF_STORAGE here
+      // means THUMB_MAX_FACES has been reached, which is a cap rather than a fault.
+      PBL_LOG_WRN("thumb: chunk %" PRIu8 " not stored (%" PRId32 ")", i, (int32_t)rv);
+      break;
+    }
+  }
+
+  settings_file_close(&file);
   kernel_free(write);
 }
 
@@ -128,10 +178,21 @@ bool stone_face_thumb_load(const Uuid *uuid, uint8_t *buffer) {
     return false;
   }
 
-  const status_t rv =
-      settings_file_get(&file, uuid, sizeof(Uuid), buffer, STONE_FACE_THUMB_BYTES);
+  // All or nothing: a face whose capture was interrupted has some of its chunks, and half a
+  // thumbnail drawn over an uninitialised buffer is worse than the icon fallback.
+  bool ok = true;
+  for (uint8_t i = 0; i < STONE_FACE_THUMB_CHUNKS; i++) {
+    const ThumbKey key = { .uuid = *uuid, .chunk = i };
+    if (settings_file_get(&file, &key, sizeof(key),
+                          &buffer[(size_t)i * STONE_FACE_THUMB_CHUNK_BYTES],
+                          prv_chunk_len(i)) != S_SUCCESS) {
+      ok = false;
+      break;
+    }
+  }
+
   settings_file_close(&file);
-  return rv == S_SUCCESS;
+  return ok;
 }
 
 #endif  // CONFIG_STONE && !CONFIG_SHELL_SDK

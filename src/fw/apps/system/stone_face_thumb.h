@@ -29,6 +29,14 @@
 #define STONE_FACE_THUMB_H (DISP_ROWS / 3)
 #define STONE_FACE_THUMB_BYTES (STONE_FACE_THUMB_W * STONE_FACE_THUMB_H)
 
+//! Bytes per stored record. A settings record's value length is an 11-bit field, so no single
+//! record can hold more than 2046 bytes and a whole thumbnail has to be split across several.
+//! This is the reason the first version of this cache never stored anything: settings_file_set()
+//! rejected every 5016-byte write with E_RANGE and the status was discarded.
+#define STONE_FACE_THUMB_CHUNK_BYTES (1024)
+#define STONE_FACE_THUMB_CHUNKS \
+  ((STONE_FACE_THUMB_BYTES + STONE_FACE_THUMB_CHUNK_BYTES - 1) / STONE_FACE_THUMB_CHUNK_BYTES)
+
 //! Capture the screen as the thumbnail for @p install_id, if it is a watchface.
 //!
 //! Must run on KernelMain, while the system framebuffer still holds that face's last frame. The
