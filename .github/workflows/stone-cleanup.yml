@@ -1,0 +1,157 @@
+name: Stone Cleanup
+
+# When a feat/* branch merges its channel is dead, and something has to retire
+# it. The rule the whole design turns on is that **nothing is deleted until the
+# watch is off it**: a channel deleted out from under a device strands it on
+# firmware that will never update again, and it fails silently — the watch just
+# stops being offered anything.
+#
+# So this runs on the *completion of a successful `stone` build*, not on the
+# merge. By then the work is published on the `stone` channel, so a device
+# migrated off feat/thing has something newer to move to rather than being
+# parked on a channel whose next build has not happened yet.
+
+on:
+  workflow_run:
+    workflows: [Stone Build]
+    types: [completed]
+    branches: [stone]
+  # A merge whose build failed leaves a stale channel behind, so there is a
+  # weekly backstop and a manual button.
+  #
+  # IMPORTANT: like `stone-sync.yml`, `schedule` and `workflow_run` only fire
+  # for workflows on the repository's DEFAULT branch. Until `stone` is the
+  # default this never runs on its own. `workflow_dispatch` works either way.
+  schedule:
+    - cron: "43 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what would be retired and change nothing
+        type: boolean
+        default: true
+
+concurrency:
+  group: stone-cleanup
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sweep:
+    # A failed build publishes nothing, so there is nothing safe to migrate to.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+
+    env:
+      STONE_CHANNEL_URL: ${{ secrets.STONE_CHANNEL_URL }}
+      STONE_PUBLISH_TOKEN: ${{ secrets.STONE_PUBLISH_TOKEN }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+    steps:
+      - name: Checkout
+        if: env.STONE_CHANNEL_URL != '' && env.STONE_PUBLISH_TOKEN != ''
+        uses: actions/checkout@v7
+        with:
+          ref: stone
+          fetch-depth: 0
+
+      - name: Retire channels whose branch is gone or merged
+        if: env.STONE_CHANNEL_URL != '' && env.STONE_PUBLISH_TOKEN != ''
+        run: |
+          set -euo pipefail
+          base="${STONE_CHANNEL_URL%/}"
+
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+          channels=$(curl --fail-with-body --silent --show-error "${base}/channels" \
+            | python3 -c 'import json,sys; [print(c["channel"]) for c in json.load(sys.stdin)["channels"]]')
+
+          retired=0
+          kept=0
+          while IFS= read -r channel; do
+            [ -n "$channel" ] || continue
+            # stone is where everything migrates *to*, and the server refuses
+            # to retire it anyway.
+            if [ "$channel" = "stone" ] || [ "$channel" = "main" ]; then
+              continue
+            fi
+
+            reason=""
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/${channel}" >/dev/null; then
+              reason="branch is gone"
+            else
+              # `git cherry` compares patch ids, not SHAs. That matters here:
+              # PRs land on stone by rebase, so a merged branch's commits are
+              # never ancestors of stone and --is-ancestor would call every
+              # merged channel live forever.
+              #
+              # Check its exit status separately: on a branch with no common
+              # ancestor it fails and prints nothing, and treating that as "no
+              # unmerged commits" would retire a live channel.
+              if cherry=$(git cherry origin/stone "origin/${channel}" 2>&1); then
+                if ! grep -q '^+' <<< "$cherry"; then
+                  reason="merged into stone"
+                fi
+              else
+                echo "::warning::cannot compare ${channel} against stone: ${cherry}"
+              fi
+            fi
+
+            if [ -z "$reason" ]; then
+              echo "keep     ${channel} (still open)"
+              kept=$((kept + 1))
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "would retire ${channel} (${reason})"
+              continue
+            fi
+
+            echo "retire   ${channel} (${reason})"
+            encoded=$(python3 -c \
+              'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' \
+              "$channel")
+
+            # migrate=true moves any device still following this channel onto
+            # stone *before* anything is deleted. Without it the server answers
+            # 409 and refuses, which is the behaviour we want by default.
+            response=$(curl --fail-with-body --silent --show-error \
+              -X DELETE "${base}/channels/${encoded}?migrate=true" \
+              -H "Authorization: Bearer ${STONE_PUBLISH_TOKEN}")
+            echo "$response"
+
+            migrated=$(echo "$response" | python3 -c \
+              'import json,sys; print(len(json.load(sys.stdin).get("migrated", [])))')
+            if [ "$migrated" != "0" ]; then
+              echo "::notice::migrated ${migrated} device(s) off ${channel} onto stone"
+            fi
+
+            # Only now is the branch safe to delete: the channel is gone and
+            # every device that followed it has somewhere to update to.
+            if git rev-parse --verify --quiet "refs/remotes/origin/${channel}" >/dev/null; then
+              git push origin --delete "$channel"
+              echo "deleted branch ${channel}"
+            fi
+
+            retired=$((retired + 1))
+          done <<< "$channels"
+
+          {
+            echo "### Stone cleanup"
+            echo ""
+            echo "- retired: ${retired}"
+            echo "- kept: ${kept}"
+            [ "$DRY_RUN" = "true" ] && echo "- dry run: nothing was changed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Explain why nothing ran
+        if: env.STONE_CHANNEL_URL == '' || env.STONE_PUBLISH_TOKEN == ''
+        run: |
+          echo "::notice::No channel server configured, so there is nothing to" \
+               "clean up. Set STONE_CHANNEL_URL and STONE_PUBLISH_TOKEN to" \
+               "enable this — see tools/stone/channel/README.md."

@@ -57,6 +57,17 @@ over the watch's BLE companion connection.
 
 ## Not built yet
 
+### Build retention
+
+`stone-cleanup.yml` retires whole channels, but nothing prunes *within* a live
+channel: every build `stone` ever published keeps its bundle in KV. At ~3 MB a
+build that is around three hundred before the free 1 GB runs out, so this is
+months away rather than urgent.
+
+The rule when it is written: keep the last 3 per channel, and never delete the
+running build, the `stone` head, anything pinned, or any loghash dictionary for
+firmware that ever ran.
+
 ### The branch-picker watchapp
 
 `apps/stone/` — lists branches via PebbleKit JS (which runs on the phone and has

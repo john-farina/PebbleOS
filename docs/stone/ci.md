@@ -19,6 +19,7 @@ the SPDX check do run on our PRs.
 | `stone-build.yml` | push to `stone` / `feat/**`, PRs into `stone`, `workflow_call`, manual | A merged dual-slot release bundle plus `manifest.json` |
 | `stone-sync.yml` | 06:17 UTC daily, manual | Fast-forwards `main`, rebases `stone`, then calls the build |
 | `stone-safe.yml` | manual only | A **GitHub Release** — a bundle kept forever |
+| `stone-cleanup.yml` | after a successful `stone` build, weekly, manual | Retires dead channels and deletes their branches |
 
 ### stone-build.yml
 
@@ -48,6 +49,33 @@ rebases `stone` onto the new base with `rerere`, and pushes with
 On conflict it captures the offending patch and the conflicting files **before**
 `git rebase --abort`, leaves `stone` untouched, and files a single issue labelled
 `stone-sync` — reusing the open one rather than filing a fresh one nightly.
+
+### stone-cleanup.yml
+
+Retires the channel behind a `feat/*` branch once that branch is gone or its
+work is on `stone`, then deletes the branch.
+
+**It runs after a successful `stone` build, not on the merge.** By then the
+merged work is published on the `stone` channel, so a device migrated off
+`feat/thing` has something newer to move to instead of being parked on a channel
+whose next build has not happened yet.
+
+Two details are load-bearing:
+
+- **Merged-ness is decided by `git cherry`, not `git merge-base --is-ancestor`.**
+  PRs land on `stone` by rebase, which rewrites the SHAs, so a merged branch's
+  commits are never ancestors of `stone`. `git cherry` compares patch ids and
+  gets it right; `--is-ancestor` would call every merged channel live forever.
+- **`?migrate=true` moves devices to `stone` before anything is deleted.**
+  Without it the server answers `409` and refuses, which is the behaviour you
+  want by default — see {doc}`channels`.
+
+Run it by hand from Actions → Stone Cleanup. `dry_run` defaults to **true**
+there, so a manual run reports what it would retire and changes nothing until
+you say otherwise.
+
+With no channel server configured it does nothing and says so, rather than
+failing.
 
 `feat/*` branches are deliberately **not** rebased. Force-pushing a branch
 someone has checked out locally destroys work in progress. Each is test-rebased

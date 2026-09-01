@@ -73,6 +73,10 @@ fills up a free 1 GB.
 
 `stone` itself cannot be retired. It is where everything migrates *to*.
 
+`stone-cleanup.yml` does all of this for you after a successful `stone` build —
+it retires any channel whose branch is gone or whose work has landed, then
+deletes the branch. See {doc}`ci`.
+
 ## Rolling back
 
 `GET /builds/<channel>` lists what a channel has published, newest first,
