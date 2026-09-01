@@ -11,6 +11,8 @@
 
 #if defined(CONFIG_STONE) && defined(CONFIG_TOUCH)
 
+#include "board/display.h"
+
 //! Swipe in from the left edge to go back, the way iOS does it.
 //!
 //! This is a *pan*, not a swipe, which is the whole point. A swipe fires once at liftoff, so the
@@ -21,10 +23,16 @@
 //! you are dragging content. A gesture that works anywhere has to compete with everything else on
 //! screen; one that only starts in a strip nothing else owns does not.
 
-//! How far in from the left edge a touch may start and still be a back gesture. iOS uses about
-//! 20pt of 390 -- around 5% -- but a watch is gripped rather than held, and a finger covers
-//! proportionally more of it, so this is a little wider in relative terms.
-#define STONE_EDGE_BACK_WIDTH_PX (20)
+//! How far in from the left edge a touch may start and still be a back gesture, as a fraction of
+//! the panel so it does not have to be retuned per board.
+//!
+//! iOS uses about 20pt of 390, around 5%, but it can afford that: the transition tracks the
+//! finger, so a gesture that started outside the strip is visibly doing nothing and you simply
+//! try again. Pebble has no interactive transition (see stone_edge_back.c), so a miss is
+//! indistinguishable from the watch ignoring you, and the wearer's only feedback is that back
+//! sometimes works. A fifth of the panel is a strip that can be hit without looking, and still
+//! leaves the other 80% free for content to be dragged in.
+#define STONE_EDGE_BACK_WIDTH_PX (DISP_COLS / 5)
 
 //! Build the edge-back recognizer into caller-provided storage, sized
 //! \ref STONE_EDGE_BACK_STATIC_SIZE.
