@@ -209,6 +209,13 @@ it already gets buttons.
   bridge maps a right swipe to `BUTTON_ID_BACK` (`recognizer/touch_nav.c:376`). It does map
   that way — but the bridge never runs on a watchface, because `touch_service.c:22-25` hands
   back a NULL service state there. Watchface touch is real work, not a side effect.
+- **The picker's stored `Animation *` is not a dangling-pointer bug and does not need
+  "fixing".** Animations default to `auto_destroy = true` (`applib/ui/animation.c:1114`), so a
+  completed page slide destroys itself and `data->slide_animation` is left pointing at a dead
+  animation — which reads exactly like a use-after-free on the next `prv_step()`. It is not:
+  `Animation *` is a handle, not a raw pointer, and `animation_unschedule()` resolves it with
+  `prv_find_animation_by_handle(..., quiet=true)` and returns false when it has gone
+  (`animation.c:1253-1265`). Established by reading, not by running.
 
 ## Open questions
 
