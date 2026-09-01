@@ -1,0 +1,15 @@
+# The one-sentence summary of the build you are about to push.
+#
+# This is a hard rule, and CI enforces it: the newest commit that touches
+# firmware or tooling must not be newer than the newest commit that touches
+# this file. Change code, change this line, in the same push. See
+# docs/stone/index.md.
+#
+# It is rendered on the watch under the build number, in the Stone app at the
+# top of the app list, so write it for the person wearing it rather than for
+# the diff: what is different about *this* build, in one sentence, no commit
+# hashes and no file names. Comments and blank lines are ignored; the first
+# line that is neither is the summary. Keep it to one line of at most 72
+# characters -- CI rejects longer, because the watch cannot show it.
+
+Stone moves to the top of the app list and names its own builds.
