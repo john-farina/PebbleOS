@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 John Farina
+# SPDX-License-Identifier: Apache-2.0
+
+name = "stone-channel"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# The whole service is one Worker and one KV namespace, which is what keeps it
+# inside Cloudflare's free tier: 100k requests/day and 1k KV writes/day against
+# a workload of one watch polling a few times an hour.
+#
+# Create the namespace once and paste the id here:
+#   npx wrangler kv namespace create STONE
+[[kv_namespaces]]
+binding = "STONE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets are set with `npx wrangler secret put NAME`, never in this file:
+#   STONE_PUBLISH_TOKEN  CI publishing builds, retiring channels
+#   STONE_CONTROL_TOKEN  switching which channel a watch follows

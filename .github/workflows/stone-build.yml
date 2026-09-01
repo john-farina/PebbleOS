@@ -61,6 +61,9 @@ jobs:
       - run: pip install intelhex
       - name: Test the Stone tools
         run: python -m unittest discover -s tools/stone -t tools/stone -v
+      - name: Test the channel server
+        working-directory: tools/stone/channel
+        run: node --test 'test/*.test.js'
 
   build:
     needs: changes
@@ -128,6 +131,13 @@ jobs:
   bundle:
     needs: build
     runs-on: ubuntu-24.04
+
+    # Job level, not step level: a step's `if` is evaluated before its own `env`
+    # block exists, so the "is a server configured?" check has to read these
+    # from here.
+    env:
+      STONE_CHANNEL_URL: ${{ secrets.STONE_CHANNEL_URL }}
+      STONE_PUBLISH_TOKEN: ${{ secrets.STONE_PUBLISH_TOKEN }}
 
     steps:
       # Full history: the manifest's notes are `origin/main..HEAD`, which a
@@ -255,6 +265,43 @@ jobs:
         with:
           name: stone-firmware-${{ env.VERSION }}
           path: out
+
+      # Publishing is an upgrade to the workflow, not a dependency of it: with
+      # no server configured the bundle is still an artifact you can sideload
+      # by hand, and a server that is down must not turn a good build red.
+      - name: Publish to the channel server
+        if: >-
+          github.event_name != 'pull_request' &&
+          env.STONE_CHANNEL_URL != '' && env.STONE_PUBLISH_TOKEN != ''
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          bundle="stone_${BOARD_NAME}_${VERSION}.pbz"
+          # Same expression the manifest's channel comes from, so the two
+          # cannot name different channels for one build. A branch name can
+          # contain a slash, hence the quoting.
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          channel=$(python3 -c \
+            'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' \
+            "${branch}")
+          base="${STONE_CHANNEL_URL%/}"
+
+          echo "uploading ${bundle} to ${base}/bundles/${channel}/"
+          curl --fail-with-body --silent --show-error \
+            -X PUT "${base}/bundles/${channel}/${bundle}" \
+            -H "Authorization: Bearer ${STONE_PUBLISH_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@out/${bundle}"
+
+          # The manifest names the bundle; the server derives the URL, so the
+          # deployed hostname never has to be repeated here.
+          curl --fail-with-body --silent --show-error \
+            -X POST "${base}/builds" \
+            -H "Authorization: Bearer ${STONE_PUBLISH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary "@out/manifest.json"
+
+          echo "published ${VERSION} to channel ${branch}"
 
   status:
     needs: [changes, build, bundle]

@@ -1,0 +1,13 @@
+{
+  "name": "stone-channel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OTA channel server for Stone OS builds",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test 'test/*.test.js'",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  }
+}
