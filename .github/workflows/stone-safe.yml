@@ -123,6 +123,10 @@ jobs:
           echo "tag=v${mmp}-${{ inputs.label }}${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # The release API rejects an abbreviated target_commitish with a 422,
+          # so the full SHA is carried separately. The short one stays for the
+          # release title and body, where it is what a human wants to read.
+          echo "full_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           ls -la out
 
       - name: Check the bundle is dual-slot before calling it safe
@@ -147,7 +151,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.0
         with:
           tag_name: ${{ steps.prep.outputs.tag }}
-          target_commitish: ${{ steps.prep.outputs.sha }}
+          target_commitish: ${{ steps.prep.outputs.full_sha }}
           name: "Safe build — ${{ inputs.ref }} @ ${{ steps.prep.outputs.sha }}"
           files: out/*
           body: |
