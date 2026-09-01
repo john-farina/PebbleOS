@@ -22,7 +22,16 @@ skips publishing and the bundle is still an artifact you can sideload by hand.
 See `tools/stone/channel/README.md` for the deploy steps and for why bundles
 live in the same store as the metadata rather than in release assets.
 
-## Blocked on Apple credentials
+## Built since
+
+### The companion app fork — done
+
+Forked, configured and shipping to TestFlight on every push:
+<https://github.com/john-farina/mobileapp> (branch `stone`). See
+{doc}`companion-app` for the contract between the two repos.
+
+What follows is the original analysis, kept because it explains *why* the fork is
+shaped the way it is.
 
 ### The companion app fork
 

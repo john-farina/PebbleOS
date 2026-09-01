@@ -22,6 +22,7 @@ firmware
 features
 simulator
 channels
+companion-app
 recovery
 roadmap
 ```
@@ -33,6 +34,7 @@ roadmap
 | {doc}`features` | How to work on a feature here, and the notes file every branch carries |
 | {doc}`simulator` | Booting a build in QEMU before it reaches the watch |
 | {doc}`channels` | Installing a branch on the watch, switching back, and cleaning up |
+| {doc}`companion-app` | The phone app fork, and what must change in lockstep with it |
 | {doc}`recovery` | What survives a bad build, and every way back |
 | {doc}`roadmap` | What is not built yet, and the decisions still open |
 

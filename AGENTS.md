@@ -95,6 +95,7 @@ landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
 | `docs/stone/simulator.md` | Booting a build in QEMU before it ever reaches the watch |
 | `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
 | `docs/stone/channels.md` | Installing a branch on the watch, switching back, retiring one |
+| `docs/stone/companion-app.md` | The phone app fork, and what must change in lockstep with it |
 | `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
 | `docs/stone/roadmap.md` | What is not built yet and which decisions are still open |
 
@@ -143,6 +144,11 @@ The five things most likely to waste your time:
 - **Boot priority is stamped at build time, not install time.** Installing an
   older build does not make it boot; re-stamp it first with
   `tools/stone/restamp_priority.py`. See `docs/stone/recovery.md`.
+- **The companion app is a second repository with a shared contract.** The
+  `/ota/latest` response shape, the channel server URL and the version floor are
+  agreed with <https://github.com/john-farina/mobileapp> (branch `stone`), and
+  breaking either side fails silently. See `docs/stone/companion-app.md` before
+  changing any of them.
 - **Stone builds must report `v200.x`.** `stone-build.yml` derives that floor per
   build. If a build reports `v4.36.x`, the floor did not apply and the companion
   app will treat the install as a downgrade — it reboots into PRF and restores
