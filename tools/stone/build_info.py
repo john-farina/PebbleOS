@@ -68,6 +68,35 @@ def stone_version():
     return text.strip() or "unknown"
 
 
+def pebbleos_base():
+    """The upstream PebbleOS release this build sits on.
+
+    Two kinds of `v*` tag are not upstream releases and must not be reported as one:
+
+    * The **version floor**. `stone-build.yml` creates an annotated `v200.0.0.1` on the
+      merge-base with `main` at build time, so an install is not seen as a downgrade of the
+      firmware Core ships. It sits *nearer* than the real release tag, so a plain
+      `git describe --abbrev=0` returns the floor and Settings would claim the watch is running
+      PebbleOS v200. The workflow exports the floor as `STONE_VERSION_FLOOR`, which is inherited
+      by every step, so it is excluded by name rather than by a duplicated constant.
+    * **Safe-build tags** (`vX.Y.Z-safeN`), which land on `main` and would otherwise be reported
+      as the release -- locally this already resolves to `v4.35.0-safe2` rather than `v4.35.0`.
+    """
+    args = [
+        "describe",
+        "--tags",
+        "--abbrev=0",
+        "--match",
+        "v[0-9]*",
+        "--exclude",
+        "*safe*",
+    ]
+    floor = os.environ.get("STONE_VERSION_FLOOR")
+    if floor:
+        args += ["--exclude", floor]
+    return _git(*args, default="unknown")
+
+
 def c_string(value, limit):
     """Escape for a C string literal and clamp to what the UI can show."""
     value = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -88,17 +117,7 @@ def main():
             _git("rev-parse", "--short=7", "HEAD", default="unknown"), 15
         ),
         # The upstream release this fork currently sits on.
-        "STONE_BASE": c_string(
-            _git(
-                "describe",
-                "--tags",
-                "--abbrev=0",
-                "--match",
-                "v[0-9]*",
-                default="unknown",
-            ),
-            31,
-        ),
+        "STONE_BASE": c_string(pebbleos_base(), 31),
         "STONE_DIRTY": "1" if dirty else "0",
     }
 

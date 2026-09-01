@@ -40,10 +40,13 @@ comes out right:
 ```c
 #define STONE_VERSION "0.1.0"
 #define STONE_BRANCH "feat/stone-version-number"
-#define STONE_COMMIT "6e9ec11"
-#define STONE_BASE   "v4.35.0"
+#define STONE_COMMIT "2f22d77"
+#define STONE_BASE   "v4.36.0"
 #define STONE_DIRTY  1
 ```
+
+Rebased onto the `stone` that carries the version floor (`f65f7025d`), which is what surfaced
+the `STONE_BASE` bug above.
 
 **Not yet looked at on a screen.** John had the simulator running in his own clone, and `./sim`
 pkills every `qemu-pebble` process, so booting a second one would have taken his down. Confirming
@@ -65,6 +68,19 @@ Settings → Stone renders the two new rows is the one outstanding task.
 - **A missing or empty `VERSION.stone` yields `"unknown"` rather than failing the build.** Every
   other field in `build_info.py` already degrades that way; build metadata should never be the
   reason firmware does not compile.
+- **The PebbleOS row excludes the version floor and safe tags.** This is not cosmetic: it is a
+  live bug in the existing "Upstream" row. `STONE_BASE` was
+  `git describe --tags --abbrev=0 --match "v[0-9]*"`, and two kinds of tag are not upstream
+  releases. `stone-build.yml` stamps an annotated `v200.0.0.1` on the merge-base with `main` at
+  build time so an install is not read as a downgrade — and because it sits *nearer* than the
+  real release tag, plain `describe` returns it, and the row would claim the watch runs PebbleOS
+  v200. Safe-build tags do the same quietly: locally the row already resolved to
+  `v4.35.0-safe2` rather than `v4.35.0`. With both excluded it now reads **v4.36.0**, which is
+  the actual release underneath.
+
+  The floor is excluded by name, from `STONE_VERSION_FLOOR` — a workflow-level `env:` in
+  `stone-build.yml`, inherited by every step and passed through `cmake -E env`, so the constant
+  is not duplicated and **no workflow edit was needed**.
 - **The old "Upstream" row became "PebbleOS".** Same value (`STONE_BASE`), clearer name — John
   asked for "the real pebbleOS that its running underneath", and "Upstream" does not say that to
   someone reading it on a wrist. It also moved up to sit directly under the Stone row, because
@@ -106,3 +122,10 @@ To check a bump works: edit `VERSION.stone` to `0.2.0`, rebuild, and the Stone r
   PebbleOS release follows. Builds clean locally for `qemu_emery`; the generated header was
   checked by hand. Not yet viewed in the simulator — John's own instance was running and `./sim`
   kills every `qemu-pebble`, so a second one would have taken his down.
+- **2026-09-01** — Rebased onto the `stone` that added the build-time version floor, and fixed
+  what that did to this feature. The floor tag `v200.0.0.1` sits nearer than the real release
+  tag, so `STONE_BASE` would have reported PebbleOS v200; safe tags were already making it report
+  `v4.35.0-safe2`. Both are now excluded and it reads `v4.36.0`. Checked both ways by running
+  `build_info.py` with and without `STONE_VERSION_FLOOR` set. Worth knowing: that env var is a
+  workflow-level `env:` and reaches the generator through `cmake -E env` without any workflow
+  change, which is the only reason this did not need one.
