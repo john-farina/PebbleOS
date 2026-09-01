@@ -148,8 +148,11 @@ jobs:
       # both. It sits on the upstream base so `git describe` still appends
       # `-<patches>-g<sha>` and every commit gets a distinct version.
       - name: Stamp the Stone version floor
+        # `set -eu`, not `-euo pipefail`: this job runs in the pebbleos-docker
+        # container, where `run:` is `sh -e` and pipefail is a bashism. There are
+        # no pipes here to need it.
         run: |
-          set -euo pipefail
+          set -eu
           git fetch origin main --depth=1000 || git fetch origin main
           base=$(git merge-base HEAD origin/main)
           # Annotated (-a), not lightweight: tools/gitinfo.py calls plain
