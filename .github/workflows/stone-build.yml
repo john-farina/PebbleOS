@@ -63,7 +63,7 @@ jobs:
         run: python -m unittest discover -s tools/stone -t tools/stone -v
       - name: Test the channel server
         working-directory: tools/stone/channel
-        run: node --test 'test/*.test.js'
+        run: npm test
 
   build:
     needs: changes

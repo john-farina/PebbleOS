@@ -10,7 +10,7 @@ work-in-progress build on your wrist without touching the stable one.
 | --- | --- |
 | `stone-build.yml` | builds a bundle per push and publishes it to the channel named after the branch |
 | `tools/stone/make_manifest.py` | describes that bundle — version, commit, base, notes |
-| `tools/stone/channel/` | the server that answers "is there anything newer?" |
+| `tools/stone/channel/` | the server that answers "is there anything newer?" — runs on Railway or Cloudflare from the same source |
 | the companion app | polls it and shows the update card |
 
 The integration point is one Gradle property. `EngDashOta.kt` in the app already

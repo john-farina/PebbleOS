@@ -2,10 +2,14 @@
 
 The server that tells the watch a new build exists.
 
-It is one Cloudflare Worker and one KV namespace, with no build step and no
-dependencies. That is not minimalism for its own sake: this workload is one
-phone polling a few times an hour, which sits inside Cloudflare's free tier
-(100k requests/day, 1k KV writes/day) with several orders of magnitude to spare.
+It runs on **Railway** (a Node process and a volume) or on **Cloudflare Workers**
+(a Worker and a KV namespace), from the same source. No dependencies, no build
+step, and no framework: the whole service is one `fetch` handler.
+
+The port is small because the handler only ever touches storage through
+`get`/`put`/`delete`/`list`. `src/index.js` is that handler and is host-agnostic;
+`src/server.js` and `src/kv_fs.js` are the ~200 lines that make it a Node
+service. There is no second copy of the routing, and the same tests cover both.
 
 ## Why this shape
 
@@ -14,17 +18,17 @@ already understands `{version, notes, is_downgrade, artifacts:[{url}]}`. Setting
 `bugUrl` to this server is the entire integration — no protocol work, no
 firmware change, and update cards for your own branches appear natively.
 
-Bundles live in the same KV namespace as the metadata. That is not the obvious
-choice, but the obvious ones are worse: GitHub release assets need a tag per
-build, and `tools/gitinfo.py` runs `git describe` with no `--match`, so tag
-churn would make every firmware version relative to the last *build* instead of
-to an upstream release. A KV value holds 25 MB against a ~3 MB bundle, and 1 GB
-of free storage is around three hundred of them.
+Bundles live in the same store as the metadata — the volume on Railway, the KV
+namespace on Cloudflare. That is not the obvious choice, but the obvious one is
+worse: GitHub release assets need a tag per build, and `tools/gitinfo.py` runs
+`git describe` with no `--match`, so tag churn would make every firmware version
+relative to the last *build* instead of to an upstream release.
 
 The boot-priority re-stamp that makes a rollback actually boot happens in CI
 with `tools/stone/restamp_priority.py`, not here. Re-stamping on serve would
-mean unzipping, patching and rezipping 3 MB inside a request — far past the free
-tier's 10 ms CPU budget, and paid compute to avoid a step CI does for free.
+mean unzipping, patching and rezipping 3 MB inside a request, which is real
+compute to avoid a step CI already does for free — and on Cloudflare's free tier
+it is well past the 10 ms CPU budget outright.
 
 ## Routes
 
@@ -60,11 +64,31 @@ stops being offered anything.
 **Switching to a channel with no builds is refused.** A typo would otherwise
 park the watch somewhere that never updates, and you would find out days later.
 
-**The download URL is derived here, not in CI.** The build job knows the bundle
-filename but not the deployed hostname; `POST /builds` fills in the rest. One
-less place for the URL to drift out of sync.
+**The download URL is derived per request, not stored.** CI knows the bundle's
+filename but not the hostname it will be served from, and storing whichever host
+CI happened to reach would orphan every build the day a custom domain is added.
+An explicit `url` in the manifest still wins, for a bundle hosted elsewhere.
 
 ## Deploy
+
+### Railway
+
+Service settings: root directory `tools/stone/channel`, a volume mounted at
+`/data`, and the two tokens as variables. The service refuses to start without
+them rather than coming up as an open server that anyone can hand your watch
+firmware through.
+
+| Variable | |
+| --- | --- |
+| `STONE_PUBLISH_TOKEN` | CI publishing builds, retiring channels |
+| `STONE_CONTROL_TOKEN` | switching which channel a watch follows |
+| `STONE_DATA_DIR` | where the volume is mounted; defaults to `/data` |
+| `PORT` | set by Railway |
+
+The volume is the whole persistence story — lose it and the watch forgets which
+channel it follows. 1 GB holds around three hundred bundles.
+
+### Cloudflare Workers
 
 ```shell
 cd tools/stone/channel
@@ -73,12 +97,14 @@ npm test
 npx wrangler kv namespace create STONE     # paste the id into wrangler.toml
 npx wrangler secret put STONE_PUBLISH_TOKEN
 npx wrangler secret put STONE_CONTROL_TOKEN
-npx wrangler deploy
+npm run deploy:cloudflare
 ```
 
-Then point the app at it by setting `bugUrl` in the app fork's
-`gradle.properties`, and add the deploy token and the worker URL to this
-repository's secrets so CI can publish:
+### Either way
+
+Point the app at it by setting `bugUrl` in the app fork's `gradle.properties`,
+and add the URL and the publish token to this repository's secrets so CI can
+publish:
 
 | Secret | |
 | --- | --- |
@@ -98,5 +124,8 @@ so a failed publish warns rather than failing the run.
 npm test
 ```
 
-28 cases, no wrangler and no network — the Worker is a plain fetch handler, so a
-fake KV and a `Request` are the whole harness.
+39 cases and about a second. No wrangler, no Railway, no network: 28 drive the
+handler directly against a fake KV, and 11 run a real HTTP server over a real
+temp directory to cover the two things only the Node host can get wrong —
+persistence across a restart, and the translation between `node:http` and
+`fetch`.

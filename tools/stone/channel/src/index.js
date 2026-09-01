@@ -132,13 +132,22 @@ async function otaLatest(request, env, url) {
     return new Response(null, { status: 204 });
   }
 
-  if (!build.url) return new Response(null, { status: 204 });
+  // An explicit url in the manifest wins, for a bundle hosted elsewhere.
+  // Otherwise it is this server, at whatever host the request arrived on.
+  const href =
+    build.url ||
+    (build.bundle &&
+      new URL(
+        `/bundles/${encodeURIComponent(build.channel)}/${encodeURIComponent(build.bundle)}`,
+        request.url,
+      ).toString());
+  if (!href) return new Response(null, { status: 204 });
 
   return json({
     version: build.version,
     notes: renderNotes(build),
     is_downgrade: isDowngrade(current, build.version),
-    artifacts: [{ url: build.url }],
+    artifacts: [{ url: href }],
   });
 }
 
@@ -174,17 +183,11 @@ async function publishBuild(request, env) {
     return error(400, "missing url or bundle");
   }
 
+  // Deliberately no derived URL stored here. CI knows the bundle's filename but
+  // not the hostname it will be served from, and baking in whichever host CI
+  // happened to reach would orphan every stored build the day a custom domain
+  // is added. The URL is derived per request instead, in otaLatest.
   const build = { ...manifest, published_at: new Date().toISOString() };
-
-  // CI uploads the bytes here and then posts the manifest make_manifest.py
-  // produced, which names the bundle but knows nothing about where it landed.
-  // Deriving the URL keeps the deployed hostname out of the build job.
-  if (!build.url) {
-    build.url = new URL(
-      `/bundles/${encodeURIComponent(build.channel)}/${encodeURIComponent(build.bundle)}`,
-      request.url,
-    ).toString();
-  }
 
   // Keyed by commit as well as channel: a rebased feat/* branch orphans its
   // earlier builds' SHAs, and those bundles are still installable. Keeping the

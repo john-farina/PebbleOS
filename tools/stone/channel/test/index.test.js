@@ -114,9 +114,10 @@ describe("publishing", () => {
     assert.equal(res.status, 400);
   });
 
-  it("derives the download URL when CI only names the bundle", async () => {
-    // The build job knows the filename but not the deployed hostname, and
-    // keeping it that way means the URL cannot drift out of sync.
+  it("derives the download URL from the request, not from publish time", async () => {
+    // CI knows the filename but not the hostname it will be served from, so
+    // the URL is derived per request. Storing it at publish time would orphan
+    // every build the day a custom domain is added.
     const body = manifest();
     delete body.url;
     await call("POST", "/builds", { body, token: PUBLISH });

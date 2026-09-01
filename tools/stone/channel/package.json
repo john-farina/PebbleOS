@@ -6,8 +6,12 @@
   "description": "OTA channel server for Stone OS builds",
   "license": "Apache-2.0",
   "scripts": {
+    "start": "node src/server.js",
     "test": "node --test 'test/*.test.js'",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "deploy:cloudflare": "wrangler deploy",
+    "dev:cloudflare": "wrangler dev"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
