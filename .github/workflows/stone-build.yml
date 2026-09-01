@@ -158,7 +158,11 @@ jobs:
           # Annotated (-a), not lightweight: tools/gitinfo.py calls plain
           # `git describe`, which considers annotated tags only. A lightweight
           # tag here is silently ignored and the version falls back.
-          git tag -fa "${STONE_VERSION_FLOOR}" -m "Stone version floor" "$base"
+          # -c user.*: an annotated tag needs a tagger, and the container has no
+          # git identity configured. Passed inline rather than set globally so
+          # nothing else in the job inherits it.
+          git -c user.name="Stone Build" -c user.email="stone@localhost" \
+            tag -fa "${STONE_VERSION_FLOOR}" -m "Stone version floor" "$base"
           echo "floor ${STONE_VERSION_FLOOR} at $(git rev-parse --short "$base")"
           echo "version: $(git describe --tags)"
 
