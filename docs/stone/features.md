@@ -68,9 +68,24 @@ Never edit an upstream workflow. Add a `stone-*.yml` instead.
 
 ## Verify before you push
 
-**There is no ARM toolchain here.** The firmware cannot be compiled locally, CI
-is the compiler, and a cycle is about seven minutes. So the value of everything
-that *can* run locally is much higher than usual:
+**Boot it in the simulator first.** CI compiles the firmware; it does not run
+it. A green build says nothing about whether the thing boots — and the first
+Stone build installed on the real watch sent it to PRF. See {doc}`simulator`.
+
+```shell
+./sim rebuild && ./sim boot
+./sim key back back back
+./sim shot /tmp/after.png     # then read the PNG
+```
+
+`qemu_emery` renders 200x228, the real Pebble Time 2 panel size. It cannot boot
+`obelix` itself — QEMU has no SiFli target — so it proves shared code (UI, apps,
+settings, the boot splash) and nothing SoC-specific. A build that fails here is
+broken for certain.
+
+CI is still the only thing that builds an installable obelix bundle, and a cycle
+is about seven minutes. So the value of everything that *can* run locally is
+much higher than usual:
 
 ```shell
 python -m ruff check . && python -m ruff format --check .

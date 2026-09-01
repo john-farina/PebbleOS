@@ -92,6 +92,7 @@ landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
 | `docs/stone/index.md` | Naming rule, branch model, commit conventions, resolving a sync conflict |
 | `docs/stone/ci.md` | The `stone-*.yml` workflows, the CI gates, and how to reproduce them locally |
 | `docs/stone/features.md` | **How to work on a feature here.** Start here if you are about to build something |
+| `docs/stone/simulator.md` | Booting a build in QEMU before it ever reaches the watch |
 | `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
 | `docs/stone/channels.md` | Installing a branch on the watch, switching back, retiring one |
 | `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
@@ -129,8 +130,14 @@ The five things most likely to waste your time:
   `git diff --numstat origin/main..origin/stone`.
 - **Upstream's workflows only trigger on `main`**, so our PRs get CI only from
   `stone-build.yml` and `compliance.yml`. Never edit an upstream workflow file.
-- **There is no ARM toolchain here.** Firmware cannot be compiled locally; CI is
-  the compiler and each cycle is ~7 minutes. Verify statically first.
+- **Boot it in the simulator before John installs it.** `./sim rebuild && ./sim
+  boot`, then `./sim shot` and read the PNG. CI compiles the firmware but never
+  runs it, and the first Stone build to reach the real watch sent it to PRF.
+  `qemu_emery` is 200x228 like the real Pebble Time 2, but it cannot boot
+  `obelix` itself (no SiFli target in QEMU), so it proves shared code only.
+  See `docs/stone/simulator.md`.
+- **CI is the only thing that builds an installable obelix bundle**, and each
+  cycle is ~7 minutes. Verify locally and statically first.
 - **`gitlint` installs as `gitlint-core`** (plain `gitlint` fails to build), and
   its default rules reject the word "WIP" in a commit title.
 - **Boot priority is stamped at build time, not install time.** Installing an
