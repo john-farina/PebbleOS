@@ -27,7 +27,10 @@ Small: a KV of `{channel → latest build}`, plus
 - `GET /ota/latest` in eng-dash's exact shape —
   `{version, notes, is_downgrade, artifacts:[{url}]}`, `204` when nothing is new
 - `PUT /channel` to switch
-- the **priority re-stamp on serve** described in {doc}`recovery`
+
+It serves bundles as built and does no byte surgery: the boot-priority re-stamp
+that makes a rollback actually boot happens in CI, with
+`tools/stone/restamp_priority.py`. See {doc}`recovery`.
 
 The shape is fixed by `EngDashOta.kt` in the companion app, which already speaks
 it. Query parameters are `device_serial`, `hardware_version` and

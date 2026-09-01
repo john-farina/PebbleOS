@@ -48,6 +48,20 @@ jobs:
               - 'tools/**'
               - 'pbl'
 
+  # Runs alongside the firmware build, not after it: a broken tool should fail
+  # in a minute rather than twenty. intelhex is pulled in because pblboot.py
+  # imports it at module scope; nothing here reads a hex file.
+  tools:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install intelhex
+      - name: Test the Stone tools
+        run: python -m unittest discover -s tools/stone -t tools/stone -v
+
   build:
     needs: changes
     if: needs.changes.outputs.should-build == 'true'
@@ -201,6 +215,26 @@ jobs:
               sys.exit("bundle is not installable: " + "; ".join(problems))
           print(f"OK: {path} is a dual-slot bundle")
           EOF
+
+      # The bootloader runs the slot with the highest priority and that number
+      # is stamped at build time, so it is what decides whether an install
+      # actually boots. Print it: comparing two builds is otherwise guesswork.
+      # pblboot.py imports intelhex at module scope, and this job runs outside
+      # the build container.
+      - name: Install what the Stone tools need
+        run: pip install intelhex
+
+      - name: Report the boot priority
+        run: |
+          set -euo pipefail
+          python3 tools/stone/restamp_priority.py --check \
+            "out/stone_${BOARD_NAME}_${VERSION}.pbz" | tee priority.txt
+          {
+            echo "### Boot priority"
+            echo '```'
+            cat priority.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Everything a channel server needs to answer "is there something newer
       # for this channel, and where do I get it".

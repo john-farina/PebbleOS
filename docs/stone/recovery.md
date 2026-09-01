@@ -38,11 +38,39 @@ Monday's build while running Tuesday's can land in the inactive slot and simply
 never boot — which is precisely the operation you do all day when hopping
 between branch builds.
 
-The intended fix is for the channel server to **re-stamp the priority as it
-serves the bundle**, so what you install is always the newest-stamped image on
-the watch. The pblboot header's own CRC covers only the firmware body, so the
-priority field can be rewritten without invalidating it; only the bundle
-manifest's CRC needs recomputing.
+The fix is `tools/stone/restamp_priority.py`, which rewrites that field in a
+built bundle so the thing you are about to install outranks whatever is already
+on the watch:
+
+```shell
+# What is stamped in a bundle right now
+python3 tools/stone/restamp_priority.py --check stone_obelix_pvt_v4.36.0-98-g137d1852.pbz
+
+# Make it the one that boots
+python3 tools/stone/restamp_priority.py stone_obelix_pvt_v4.36.0-98-g137d1852.pbz
+```
+
+With no `--priority` it stamps the dev band with the current time — the same
+thing a fresh build gets — so **re-stamping an archived bundle is how you roll
+back**. A rebuild would work too, but it takes twenty minutes and produces
+different bytes; a re-stamp takes a second and produces the build you already
+tested.
+
+It is safe because of where the CRCs sit. The pblboot header's own CRC covers
+only the firmware body *after* the header, so the priority can be rewritten
+without invalidating it. The bundle manifest's CRC is taken over the whole file,
+header included, so that one is recomputed — with `tools/stm32_crc.py`, which is
+the variant the manifest uses, not zlib's.
+
+This deliberately does **not** happen in the channel server. Re-stamping means
+unzipping, patching, recomputing a CRC over 3 MB and rezipping; on Cloudflare
+Workers' free tier that is well past the 10 ms CPU budget per request, and
+paying for compute to avoid a step CI already does for free is the wrong trade.
+The server hands out bundles as built; a rollback re-stamps first and publishes
+the result.
+
+Every Stone build prints its stamped priority to the run summary, so comparing
+two builds does not mean reading bytes out of a zip.
 
 ```{warning}
 The boot-priority behaviour above is read from `tools/pblboot.py`, the tool that
