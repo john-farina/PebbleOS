@@ -7,7 +7,8 @@ name: Stone Build
 
 on:
   push:
-    branches: [stone]
+    # feat/** too: a WIP branch is only a channel you can install if it builds.
+    branches: [stone, "feat/**"]
   pull_request:
     branches: [stone]
   workflow_call:
@@ -115,8 +116,12 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # Full history: the manifest's notes are `origin/main..HEAD`, which a
+      # shallow clone cannot compute. No submodules needed here.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Download slot artifacts
         uses: actions/download-artifact@v8
@@ -196,6 +201,20 @@ jobs:
               sys.exit("bundle is not installable: " + "; ".join(problems))
           print(f"OK: {path} is a dual-slot bundle")
           EOF
+
+      # Everything a channel server needs to answer "is there something newer
+      # for this channel, and where do I get it".
+      - name: Describe the build
+        run: |
+          set -euo pipefail
+          python3 tools/stone/make_manifest.py \
+            --pbz "out/stone_${BOARD_NAME}_${VERSION}.pbz" \
+            --channel "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" \
+            --version "${VERSION}" \
+            --hardware "${BOARD_NAME}" \
+            --base-ref origin/main \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output "out/manifest.json"
 
       - name: Store the installable bundle
         uses: actions/upload-artifact@v7
