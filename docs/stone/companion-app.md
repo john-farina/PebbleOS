@@ -11,6 +11,20 @@ get it wrong, because the failure is silent.
 | **Upstream** | <https://github.com/coredevices/mobileapp> (Kotlin Multiplatform, GPLv3) |
 | **Read first over there** | `AGENTS.md`, then `STONE-OS.md` |
 | **Ships via** | TestFlight, on every push to its `stone` branch |
+| **Blocked on** | one manual step — see `RUNNER-SETUP.md` in that repo |
+
+## The pipeline needs a self-hosted runner
+
+A GitHub-hosted `macos-15` runner has 7.0 GB of RAM, and the app's Kotlin/Native
+release link needs more heap than that leaves after the Kotlin daemon. Five
+splits were measured and every one ran out of memory, so
+`stone-testflight.yml` targets a self-hosted runner on John's Mac.
+
+**Registering that runner is the one step still outstanding**, and it is
+deliberately left to John: `config.sh` authorises a machine to execute code sent
+from GitHub. The exact command, everything already ruled out, and the security
+caveat of a self-hosted runner on a public repository are in `RUNNER-SETUP.md`
+on the app fork's `stone` branch.
 
 ## What the fork changes
 
