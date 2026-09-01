@@ -31,6 +31,7 @@
 #include "applib/ui/animation.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/property_animation.h"
+#include "applib/ui/stone_haptics.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
 #include "process_management/app_install_manager.h"
@@ -40,6 +41,7 @@
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
 #include "shell/normal/watchface.h"
+#include "stone_face_thumb.h"
 #include "shell/prefs.h"
 #include "system/passert.h"
 
@@ -73,6 +75,12 @@ typedef struct {
   //! rather than jumping.
   int16_t slide_x;
   Animation *slide_animation;
+
+  //! The miniature of the face on the current page, if one has ever been captured. Loaded on
+  //! demand for the visible page only -- holding every face's thumbnail would be pointless when
+  //! exactly one is on screen.
+  GBitmap *thumb;
+  AppInstallId thumb_id;
 } StoneFacePickerData;
 
 static StoneFacePickerData *prv_data(void) {
@@ -88,6 +96,52 @@ static AppMenuNode *prv_node(StoneFacePickerData *data) {
     return NULL;
   }
   return app_menu_data_source_get_node_at_index(&data->data_source, data->index);
+}
+
+//////////////
+// Thumbnails
+
+// Load the miniature for the current page, if there is one. A face that has never been worn has
+// never rendered, so it has no thumbnail and never will until it is worn once; that is the case
+// the icon fallback exists for, and it is not an error.
+static void prv_load_thumb(StoneFacePickerData *data) {
+  AppMenuNode *node = prv_node(data);
+  if (!node || (node->install_id == data->thumb_id)) {
+    return;
+  }
+
+  if (data->thumb) {
+    gbitmap_destroy(data->thumb);
+    data->thumb = NULL;
+  }
+  data->thumb_id = node->install_id;
+
+  GBitmap *thumb = gbitmap_create_blank(GSize(STONE_FACE_THUMB_W, STONE_FACE_THUMB_H),
+                                        GBITMAP_NATIVE_FORMAT);
+  if (!thumb) {
+    return;
+  }
+
+  // Rows are written contiguously by the capture, so copy row by row rather than assuming the
+  // blank bitmap's stride matches the thumbnail's width.
+  bool ok = false;
+  uint8_t *raw = app_malloc(STONE_FACE_THUMB_BYTES);
+  if (raw && stone_face_thumb_load(&node->uuid, raw)) {
+    for (int16_t y = 0; y < STONE_FACE_THUMB_H; y++) {
+      const GBitmapDataRowInfo row = gbitmap_get_data_row_info(thumb, (uint16_t)y);
+      memcpy(&row.data[row.min_x], &raw[y * STONE_FACE_THUMB_W], STONE_FACE_THUMB_W);
+    }
+    ok = true;
+  }
+  if (raw) {
+    app_free(raw);
+  }
+
+  if (ok) {
+    data->thumb = thumb;
+  } else {
+    gbitmap_destroy(thumb);
+  }
 }
 
 /////////////
@@ -139,13 +193,14 @@ static void prv_content_update_proc(Layer *layer, GContext *ctx) {
   // moving rather than two things animating side by side.
   const int16_t dx = data->slide_x;
 
-  GBitmap *icon = app_menu_data_source_get_node_icon(&data->data_source, node);
-  if (icon) {
-    const GSize size = icon->bounds.size;
-    const GRect icon_frame = GRect(dx + ((bounds.size.w - size.w) / 2),
-                                   (bounds.size.h / 2) - size.h, size.w, size.h);
-    graphics_context_set_compositing_mode(ctx, GCompOpSet);
-    graphics_draw_bitmap_in_rect(ctx, icon, &icon_frame);
+  // The real miniature when the face has been worn, its icon when it has not.
+  GBitmap *art = data->thumb ?: app_menu_data_source_get_node_icon(&data->data_source, node);
+  if (art) {
+    const GSize size = art->bounds.size;
+    const GRect art_frame = GRect(dx + ((bounds.size.w - size.w) / 2),
+                                  (bounds.size.h / 2) - size.h, size.w, size.h);
+    graphics_context_set_compositing_mode(ctx, data->thumb ? GCompOpAssign : GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, art, &art_frame);
   }
 
   graphics_context_set_text_color(ctx, GColorWhite);
@@ -192,6 +247,8 @@ static void prv_step(int delta) {
     return;
   }
 
+  stone_haptics_play(StoneHaptic_Tick);
+
   // Wrap, so paging never dead-ends on a list you are cycling through.
   if (delta < 0) {
     data->index = (data->index == 0) ? (count - 1) : (data->index - 1);
@@ -218,6 +275,7 @@ static void prv_step(int delta) {
     data->slide_x = 0;
   }
 
+  prv_load_thumb(data);
   layer_mark_dirty(&data->content_layer);
 }
 
@@ -231,6 +289,7 @@ static void prv_choose(void) {
   if (!node) {
     return;
   }
+  stone_haptics_play(StoneHaptic_Select);
   app_manager_put_launch_app_event(&(AppLaunchEventConfig) {
     .id = node->install_id,
     .common.reason = APP_LAUNCH_USER,
@@ -288,6 +347,7 @@ static void prv_window_load(Window *window) {
   StoneFacePickerData *data = window_get_user_data(window);
   Layer *root = window_get_root_layer(window);
 
+  prv_load_thumb(data);
   layer_init(&data->content_layer, &root->bounds);
   layer_set_update_proc(&data->content_layer, prv_content_update_proc);
   layer_add_child(root, &data->content_layer);
@@ -298,6 +358,10 @@ static void prv_window_unload(Window *window) {
   if (data->slide_animation) {
     animation_unschedule(data->slide_animation);
     data->slide_animation = NULL;
+  }
+  if (data->thumb) {
+    gbitmap_destroy(data->thumb);
+    data->thumb = NULL;
   }
   layer_deinit(&data->content_layer);
 }
@@ -327,6 +391,7 @@ static void prv_main(void) {
                                     RESOURCE_ID_MENU_LAYER_GENERIC_WATCHFACE_ICON);
 
   // Open on the face being worn, so the picker starts where the wearer already is.
+  data->thumb_id = INSTALL_ID_INVALID;
   data->active_id = watchface_get_default_install_id();
   data->index = app_menu_data_source_get_index_of_app_with_install_id(&data->data_source,
                                                                      data->active_id);

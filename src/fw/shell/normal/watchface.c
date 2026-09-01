@@ -19,6 +19,7 @@
 #include "applib/app_timer.h"
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
+#include "applib/ui/stone_haptics.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
@@ -363,7 +364,9 @@ void watchface_handle_gesture_event(PebbleEvent *e) {
       prv_tap_action(BUTTON_ID_UP);
       break;
     case GestureEvent_LongPress:
-      // The gesture John asked for: hold the face to shrink it into the picker.
+      // The gesture John asked for: hold the face to shrink it into the picker. The haptic is
+      // what tells you the hold registered, before anything has visibly happened.
+      stone_haptics_play(StoneHaptic_Enter);
       prv_launch_app(APP_ID_STONE_FACE_PICKER, BUTTON_ID_SELECT);
       break;
     case GestureEvent_Tap:

@@ -22,6 +22,7 @@
 #include "window.h"
 
 #include "applib/ui/menu_layer.h"
+#include "applib/ui/stone_haptics.h"
 #include "apps/system/launcher/default/stone_app_list.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/i18n/i18n.h"
@@ -246,6 +247,8 @@ static void prv_selection_will_change_cb(SettingsCallbacks *context, uint16_t *n
     // A grabbed app stays in its own half of the list; there is nowhere meaningful for it to go
     // in the other one, and letting it leave would make the heading a place you could drop things.
     if (!prv_is_main_row(data, target) || (target == old_row)) {
+      // Refused: the grabbed app stays in its own half of the list.
+      stone_haptics_play(StoneHaptic_Bump);
       *new_row = old_row;
       return;
     }
@@ -253,6 +256,8 @@ static void prv_selection_will_change_cb(SettingsCallbacks *context, uint16_t *n
     data->order[old_row] = data->order[target];
     data->order[target] = moved;
     data->grabbed = (int16_t)target;
+    // Each row the app travels past is a discrete event worth feeling.
+    stone_haptics_play(StoneHaptic_Tick);
     return;
   }
 
@@ -269,8 +274,10 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     if (data->grabbed == (int16_t)row) {
       data->grabbed = GRAB_NONE;
       prv_persist_order(data);
+      stone_haptics_play(StoneHaptic_Select);
     } else {
       data->grabbed = (int16_t)row;
+      stone_haptics_play(StoneHaptic_Enter);
     }
     settings_menu_reload_data(SettingsMenuItemStoneApps);
     return;
