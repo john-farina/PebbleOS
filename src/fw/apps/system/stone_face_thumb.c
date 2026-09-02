@@ -39,9 +39,18 @@
 #define THUMB_MAX_FACES (8)
 
 //! Sized for every chunk of every face, plus each record's header and key, plus headroom for the
-//! settings layer to compact into.
+//! settings layer to compact into. This is a *ceiling*, not an allocation -- see THUMB_FILE_SEED.
 #define THUMB_FILE_SIZE \
   (((STONE_FACE_THUMB_BYTES + (STONE_FACE_THUMB_CHUNKS * 32)) * THUMB_MAX_FACES) * 2)
+
+//! What the file is actually created at, growing by doubling as thumbnails arrive.
+//!
+//! settings_file_open() allocates its maximum up front, and this file's maximum is ~80KB: opening
+//! it would erase twenty NOR sectors before returning. That is a second or more of blocking flash
+//! work, and the read side runs on the app task inside the picker's window load -- so the first
+//! open of the picker on a fresh watch would hang it. Seeding small costs an occasional grow on
+//! the write path, which already runs on the system task where slow flash work belongs.
+#define THUMB_FILE_SEED (4096)
 
 #define SCALE (3)
 
@@ -75,7 +84,8 @@ static void prv_store(void *ctx) {
   ThumbWrite *write = ctx;
   SettingsFile file;
 
-  const status_t open_rv = settings_file_open(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE);
+  const status_t open_rv =
+      settings_file_open_growable(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE, THUMB_FILE_SEED);
   if (open_rv != S_SUCCESS) {
     // Every earlier version of this function discarded its status, which is why a cache that
     // stored nothing at all looked exactly like a cache of faces that had never been worn.
@@ -174,7 +184,8 @@ void stone_face_thumb_capture(AppInstallId install_id) {
 
 bool stone_face_thumb_load(const Uuid *uuid, uint8_t *buffer) {
   SettingsFile file;
-  if (settings_file_open(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE) != S_SUCCESS) {
+  if (settings_file_open_growable(&file, THUMB_FILE_NAME, THUMB_FILE_SIZE, THUMB_FILE_SEED) !=
+      S_SUCCESS) {
     return false;
   }
 
