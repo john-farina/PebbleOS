@@ -32,6 +32,7 @@
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/property_animation.h"
 #include "applib/haptics/stone_haptics.h"
+#include "debug/stone_trace.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
 #include "process_management/app_install_manager.h"
@@ -142,6 +143,8 @@ static void prv_load_thumb(StoneFacePickerData *data) {
   } else {
     gbitmap_destroy(thumb);
   }
+  // 1: which page is showing, and whether it got a miniature or fell back to its icon.
+  stone_trace(StoneTracePicker, 1, (int16_t)data->index, ok ? 1 : 0);
 }
 
 /////////////
@@ -248,6 +251,7 @@ static void prv_step(int delta) {
   }
 
   stone_haptics_play(StoneHaptic_Tick);
+  stone_trace(StoneTracePicker, 2, (int16_t)delta, (int16_t)prv_count(data));
 
   // Wrap, so paging never dead-ends on a list you are cycling through.
   if (delta < 0) {

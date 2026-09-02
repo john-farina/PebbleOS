@@ -24,6 +24,7 @@
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/settings/settings_raw_iter.h"
 #include "pbl/logging/logging.h"
+#include "debug/stone_trace.h"
 #include "system/passert.h"
 
 #include <inttypes.h>
@@ -104,6 +105,7 @@ static void prv_store(void *ctx) {
       // A partial thumbnail is never served: prv_load requires every chunk. E_OUT_OF_STORAGE here
       // means THUMB_MAX_FACES has been reached, which is a cap rather than a fault.
       PBL_LOG_WRN("thumb: chunk %" PRIu8 " not stored (%" PRId32 ")", i, (int32_t)rv);
+      stone_trace(StoneTraceThumb, 3, (int16_t)i, (int16_t)rv);
       break;
     }
   }
@@ -158,6 +160,9 @@ void stone_face_thumb_capture(AppInstallId install_id) {
   if (!app_install_entry_is_watchface(&entry)) {
     return;
   }
+  // 1: a face is being photographed. Absent from a capture means the cache is not filling, which
+  // is a different problem from a thumbnail that was stored and could not be read back.
+  stone_trace(StoneTraceThumb, 1, (int16_t)install_id, 0);
 
   ThumbWrite *write = kernel_malloc(sizeof(ThumbWrite) + STONE_FACE_THUMB_BYTES);
   if (!write) {
@@ -203,6 +208,10 @@ bool stone_face_thumb_load(const Uuid *uuid, uint8_t *buffer) {
   }
 
   settings_file_close(&file);
+  // 4/5: whether a face had a stored miniature. A picker showing icons is expected while these
+  // are 5 -- the cache only fills as faces are worn -- and a bug once they are 4 and it still
+  // draws an icon.
+  stone_trace(StoneTraceThumb, ok ? 4 : 5, 0, 0);
   return ok;
 }
 
