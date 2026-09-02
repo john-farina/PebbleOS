@@ -58,6 +58,8 @@
 #include "pbl/services/runlevel.h"
 #include "shell/normal/app_idle_timeout.h"
 #include "applib/haptics/stone_haptics.h"
+#include "debug/stone_trace.h"
+#include "shell/normal/watchface.h"
 #include "shell/normal/watchface.h"
 #include "shell/prefs.h"
 #include "shell/shell_event_loop.h"
@@ -159,6 +161,59 @@ static void back_button_force_quit_handler(void *data) {
   launcher_task_add_callback(launcher_force_quit_app, NULL);
 }
 
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+//! Hold the three right-hand buttons to print a trace capture to the log.
+//!
+//! UP+SELECT+DOWN, and never BACK: SELECT+BACK held is the hardware reset back door
+//! (drivers/sf32lb52/debounced_button.c), and adding BACK to a debug combo would mean a wearer
+//! trying to capture a bug rebooted the watch instead -- losing the very thing they were
+//! capturing.
+//!
+//! The three buttons will also do whatever they normally do; that is accepted. A combo that
+//! suppressed its own presses would need to guess, at the first press, whether the other two are
+//! coming.
+#define STONE_CAPTURE_BUTTONS ((1 << BUTTON_ID_UP) | (1 << BUTTON_ID_SELECT) | (1 << BUTTON_ID_DOWN))
+#define STONE_CAPTURE_HOLD_MS (5000)
+
+static uint8_t s_stone_button_mask;
+static TimerID s_stone_capture_timer = TIMER_INVALID_ID;
+
+static void prv_stone_capture_fire(void *unused) {
+  // Deliberately on the timer task rather than KernelMain: the dump is a few hundred log lines
+  // and blocking the launcher for that long would look like the freeze it exists to explain.
+  stone_trace_dump();
+  stone_haptics_play(StoneHaptic_Bump);
+}
+
+static void prv_stone_capture_buttons(ButtonId button_id, bool pressed) {
+  if (button_id >= NUM_BUTTONS) {
+    return;
+  }
+  if (s_stone_capture_timer == TIMER_INVALID_ID) {
+    s_stone_capture_timer = new_timer_create();
+  }
+
+  const uint8_t before = s_stone_button_mask;
+  if (pressed) {
+    s_stone_button_mask |= (uint8_t)(1 << button_id);
+  } else {
+    s_stone_button_mask &= (uint8_t)~(1 << button_id);
+  }
+  if (s_stone_button_mask == before) {
+    return;
+  }
+
+  const bool held_now = ((s_stone_button_mask & STONE_CAPTURE_BUTTONS) == STONE_CAPTURE_BUTTONS);
+  const bool held_before = ((before & STONE_CAPTURE_BUTTONS) == STONE_CAPTURE_BUTTONS);
+  if (held_now && !held_before) {
+    new_timer_start(s_stone_capture_timer, STONE_CAPTURE_HOLD_MS, prv_stone_capture_fire, NULL, 0);
+  } else if (!held_now && held_before) {
+    // Any of the three released before the timeout: not a capture.
+    new_timer_stop(s_stone_capture_timer);
+  }
+}
+#endif
+
 static void launcher_handle_button_event(PebbleEvent* e) {
   ButtonId button_id = e->button.button_id;
   const bool watchface_running = app_manager_is_watchface_running();
@@ -203,11 +258,17 @@ static void launcher_handle_button_event(PebbleEvent* e) {
     // point of a press being acknowledged at all.
     stone_haptics_button(button_id);
 #endif
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+    prv_stone_capture_buttons(button_id, true /* pressed */);
+#endif
     light_button_pressed();
   } else if (e->type == PEBBLE_BUTTON_UP_EVENT) {
     if (button_id == BUTTON_ID_BACK) {
       launcher_cancel_force_quit();
     }
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+    prv_stone_capture_buttons(button_id, false /* pressed */);
+#endif
     light_button_released();
   }
 
@@ -339,6 +400,15 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
       }
       // Stamp on every event so the whole gesture carries the Touchdown latch.
       touch_wake_gate_stamp(&e->touch.event, gate);
+#if defined(CONFIG_STONE) && !defined(CONFIG_SHELL_SDK)
+      // The watchface decides its own swipes, from these points. It cannot use the recognizers --
+      // applib's touch service refuses a watchface by design -- and the controller's gesture
+      // engine has no thresholds we can reach. Routed here for the same reason buttons are:
+      // this is where the shell already receives input the app task will never see.
+      if (!is_modal_focused && app_manager_is_watchface_running()) {
+        watchface_handle_touch_event(e);
+      }
+#endif
       return;
     }
 #endif
