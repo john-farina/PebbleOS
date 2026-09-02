@@ -27,5 +27,11 @@ void watchface_reset_click_manager(void);
 //! The applib touch service refuses watchfaces a service state on purpose, so neither the
 //! recognizers nor the touch-nav bridge ever reach one. Gestures therefore arrive here from the
 //! kernel event loop, exactly as button events already do.
+//! Feed a raw contact point to the watchface's own swipe detection.
+//!
+//! Separate from the gesture handler because the controller's gesture engine cannot be tuned and
+//! its swipe detection is what made swiping the face feel unreliable. See stone_swipe_detect.h.
+void watchface_handle_touch_event(PebbleEvent *e);
+
 void watchface_handle_gesture_event(PebbleEvent *e);
 #endif

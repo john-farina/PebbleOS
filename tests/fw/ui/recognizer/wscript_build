@@ -38,6 +38,13 @@ clar(ctx,
     defines = ['CONFIG_TOUCH'],
     test_sources_ant_glob = "test_swipe.c")
 
+# The watchface's own detector. No recognizer, no manager and no clock: it takes (x, y, t), so
+# every case a finger can produce is testable here rather than only on a wrist.
+clar(ctx,
+    sources_ant_glob = " src/fw/applib/ui/recognizer/stone_swipe_detect.c",
+    defines = ['CONFIG_TOUCH', 'CONFIG_STONE'],
+    test_sources_ant_glob = "test_stone_swipe_detect.c")
+
 clar(ctx,
     sources_ant_glob = " src/fw/applib/graphics/gtypes.c" \
                        " src/fw/applib/ui/layer.c" \

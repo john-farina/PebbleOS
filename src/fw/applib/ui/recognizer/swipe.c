@@ -15,28 +15,10 @@
 // SWIPE_MIN_LENGTH_PX and SWIPE_MAX_DURATION_MS live in swipe.h: synthetic gesture generators size
 // their paths from the same limits this recognizer enforces.
 
-// Once the major-axis travel exceeds this, the path is committed enough that we start enforcing
-// straightness: any further wandering on the minor axis fails the swipe early. The drag threshold
-// value comes from the reference PT2 touch-nav gesture spec.
-#define SWIPE_STRAIGHTNESS_MIN_PX (10)
-
-// Minor-axis excursion allowed on top of the half-of-major ratio. A pure ratio is applied first
-// when the travel is barely past SWIPE_STRAIGHTNESS_MIN_PX, where a few pixels of contact noise
-// are most of the major axis -- so twelve pixels right and seven pixels of jitter failed the
-// swipe permanently, before the wearer had finished starting it. The corridor is what makes the
-// check mean "this path is going somewhere else" rather than "this path has begun".
-#define SWIPE_STRAIGHTNESS_SLACK_PX (6)
-
-// A flick lifts off while it is still moving, so it travels less than a deliberate drag covering
-// the same intent. Below SWIPE_MIN_LENGTH_PX a path is still a swipe if it was going this fast
-// when contact ended; both bounds must be met, so a tap that slides a little is not promoted.
-#define SWIPE_FLING_MIN_LENGTH_PX (24)
-#define SWIPE_FLING_MIN_VELOCITY_PX_S (600)
-
-// How far the finger may sit from the touchdown point and still count as stationary. The duration
-// budget is spent from the moment it first moves further than this, not from touchdown, so
-// resting a finger on the screen before flicking does not consume the whole window.
-#define SWIPE_MOTION_START_PX (4)
+// The shape rules -- straightness, the motion-start zone, the flick bounds -- live in swipe.h,
+// because the watchface runs the same rules through stone_swipe_detect.c and a watch where the
+// same gesture needs a different flick depending on what is on screen is worse than one where it
+// is merely hard.
 
 // Number of most-recent position samples retained for the velocity estimate.
 #define SWIPE_VELOCITY_SAMPLE_COUNT (3)

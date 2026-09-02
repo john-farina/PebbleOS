@@ -20,6 +20,8 @@
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
 #include "applib/haptics/stone_haptics.h"
+#include "applib/ui/recognizer/stone_swipe_detect.h"
+#include "debug/stone_trace.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
@@ -335,6 +337,56 @@ static void prv_launch_app(AppInstallId app_id, ButtonId button) {
 // pair follows the content-scroll convention where the finger moves opposite to the content. The
 // watchface has nothing to scroll, but a second, face-only rule would be one more thing to learn
 // for no gain.
+//! Swipe detection for the face, from raw contact points.
+//!
+//! Same gate as the gesture handler: an idle face must not navigate because a sleeve brushed it.
+void watchface_handle_touch_event(PebbleEvent *e) {
+  static StoneSwipeDetect s_detect;
+
+  const TouchEvent *touch = &e->touch.event;
+  const uint32_t now_ms = (uint32_t)(((uint64_t)rtc_get_ticks() * 1000u) / RTC_TICKS_HZ);
+
+  if (prv_should_ignore_button_click() || prv_is_any_combo_active() ||
+      !touch_session_is_active()) {
+    // Abandon anything in progress rather than letting a gesture span the gate closing.
+    stone_swipe_detect_reset(&s_detect);
+    return;
+  }
+
+  switch (touch->type) {
+    case TouchEvent_Touchdown:
+      stone_trace(StoneTraceTouch, 0, touch->x, touch->y);
+      stone_swipe_detect_down(&s_detect, touch->x, touch->y, now_ms);
+      break;
+    case TouchEvent_PositionUpdate:
+      stone_trace(StoneTraceTouch, 1, touch->x, touch->y);
+      stone_swipe_detect_move(&s_detect, touch->x, touch->y, now_ms);
+      break;
+    case TouchEvent_Liftoff: {
+      const SwipeDirection dir = stone_swipe_detect_up(&s_detect, now_ms);
+      stone_trace(StoneTraceSwipe, (uint8_t)dir, touch->x, touch->y);
+      switch (dir) {
+        case SwipeDirection_Right:
+          prv_back_action(BUTTON_ID_BACK);
+          break;
+        case SwipeDirection_Left:
+          prv_tap_action(BUTTON_ID_SELECT);
+          break;
+        case SwipeDirection_Up:
+          prv_tap_action(BUTTON_ID_DOWN);
+          break;
+        case SwipeDirection_Down:
+          prv_tap_action(BUTTON_ID_UP);
+          break;
+        case SwipeDirection_None:
+        default:
+          break;
+      }
+      break;
+    }
+  }
+}
+
 void watchface_handle_gesture_event(PebbleEvent *e) {
   if (prv_should_ignore_button_click()) {
     return;
@@ -350,18 +402,19 @@ void watchface_handle_gesture_event(PebbleEvent *e) {
     return;
   }
 
+  stone_trace(StoneTraceGesture, (uint8_t)e->gesture.event.type, e->gesture.event.x,
+              e->gesture.event.y);
+
   switch (e->gesture.event.type) {
     case GestureEvent_SwipeRight:
-      prv_back_action(BUTTON_ID_BACK);
-      break;
     case GestureEvent_SwipeLeft:
-      prv_tap_action(BUTTON_ID_SELECT);
-      break;
     case GestureEvent_SwipeUp:
-      prv_tap_action(BUTTON_ID_DOWN);
-      break;
     case GestureEvent_SwipeDown:
-      prv_tap_action(BUTTON_ID_UP);
+      // Deliberately ignored. The controller's own swipe engine is a black box with no thresholds
+      // we can reach, and it is why swiping the face stayed unreliable while swiping inside an app
+      // improved -- the software recognizer's fixes were never in this path. Swipes on the face
+      // are now decided by watchface_handle_touch_event() below, from the same raw points, under
+      // the same rules as everywhere else.
       break;
     case GestureEvent_LongPress:
       // The gesture John asked for: hold the face to shrink it into the picker. The haptic is

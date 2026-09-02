@@ -27,6 +27,29 @@ typedef struct SwipeRecognizerData SwipeRecognizerData;
 //! synthetic generator cannot produce a path this recognizer is bound to reject.
 #define SWIPE_MAX_DURATION_MS (300)
 
+//! Once the major-axis travel exceeds this, the path is committed enough that we start enforcing
+//! straightness: any further wandering on the minor axis fails the swipe early. The drag threshold
+//! value comes from the reference PT2 touch-nav gesture spec.
+#define SWIPE_STRAIGHTNESS_MIN_PX (10)
+
+//! Minor-axis excursion allowed on top of the half-of-major ratio. A pure ratio is applied first
+//! when the travel is barely past SWIPE_STRAIGHTNESS_MIN_PX, where a few pixels of contact noise
+//! are most of the major axis -- so twelve pixels right and seven pixels of jitter failed the
+//! swipe permanently, before the wearer had finished starting it. The corridor is what makes the
+//! check mean "this path is going somewhere else" rather than "this path has begun".
+#define SWIPE_STRAIGHTNESS_SLACK_PX (6)
+
+//! A flick lifts off while it is still moving, so it travels less than a deliberate drag covering
+//! the same intent. Below SWIPE_MIN_LENGTH_PX a path is still a swipe if it was going this fast
+//! when contact ended; both bounds must be met, so a tap that slides a little is not promoted.
+#define SWIPE_FLING_MIN_LENGTH_PX (24)
+#define SWIPE_FLING_MIN_VELOCITY_PX_S (600)
+
+//! How far the finger may sit from the touchdown point and still count as stationary. The duration
+//! budget is spent from the moment it first moves further than this, not from touchdown, so
+//! resting a finger on the screen before flicking does not consume the whole window.
+#define SWIPE_MOTION_START_PX (4)
+
 //! Swipe direction, also used as a bitmask when configuring which directions a swipe recognizer
 //! accepts. Screen coordinates grow downward, so a positive y delta is a downward swipe.
 typedef enum SwipeDirection {
