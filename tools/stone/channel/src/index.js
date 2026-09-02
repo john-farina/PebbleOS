@@ -357,6 +357,69 @@ async function retireChannel(request, env, channel, url) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Trace captures
+//
+// A capture is the last few seconds of what the watch's touch, gesture and
+// picker paths actually saw, printed by holding the three right-hand buttons.
+// It arrives here as plain text and stays plain text: the whole value of it is
+// that a person can read it, paste it into a conversation, and get an answer
+// about a gesture nobody can reproduce off a wrist.
+//
+// Uploading needs the publish token; reading one back does not. That asymmetry
+// is deliberate and matches bundles: only the watch's owner can add captures,
+// and a capture is diagnostic output from our own open-source firmware, so
+// putting a token in front of reading it would only make it harder to share
+// with whoever is helping.
+
+const TRACE_PREFIX = "trace:";
+const TRACE_INDEX = "traces:index";
+const TRACE_MAX_BYTES = 256 * 1024;
+const TRACE_KEEP = 40;
+
+// The listing is its own document rather than KV metadata. Metadata is a
+// Cloudflare feature the Node/Railway host does not have, and a listing that
+// worked on one deployment and silently came back empty on the other is
+// exactly the kind of difference that wastes an afternoon.
+async function readTraceIndex(env) {
+  return (await env.STONE.get(TRACE_INDEX, "json")) || [];
+}
+
+async function putTrace(request, env, url) {
+  const body = await request.text();
+  if (!body.trim()) return error(400, "empty capture");
+  if (body.length > TRACE_MAX_BYTES) return error(413, "capture too large");
+
+  // Sorted-by-time ids, so the newest capture is also the largest id.
+  const now = new Date().toISOString();
+  const id = `${now.replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 8)}`;
+  const note = url.searchParams.get("note") || "";
+
+  // The note goes into the capture as well as into the index: a capture that
+  // has been copied somewhere else should still say what was being attempted,
+  // or it is a wall of coordinates with no question attached.
+  const header = `# stone-trace ${id}${note ? ` note=${note}` : ""}\n`;
+  await env.STONE.put(TRACE_PREFIX + id, header + body);
+
+  const index = [{ id, uploaded: now, note, bytes: body.length }, ...(await readTraceIndex(env))];
+  const keep = index.slice(0, TRACE_KEEP);
+  await env.STONE.put(TRACE_INDEX, JSON.stringify(keep));
+  await Promise.all(index.slice(TRACE_KEEP).map((t) => env.STONE.delete(TRACE_PREFIX + t.id)));
+
+  return json({ stored: id, bytes: body.length, url: new URL(`/traces/${id}`, url).toString() });
+}
+
+async function listTraces(env) {
+  return json({ traces: await readTraceIndex(env) });
+}
+
+async function getTrace(env, id) {
+  const text = await env.STONE.get(TRACE_PREFIX + id);
+  if (text === null) return error(404, "unknown capture");
+  // Plain text, so opening it in a browser shows it rather than downloading it.
+  return new Response(text, { headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -375,9 +438,17 @@ export default {
       return listChannels(env);
     }
 
+    if (method === "GET" && path === "/traces") {
+      return listTraces(env);
+    }
+
     let m;
     if (method === "GET" && (m = /^\/builds\/(.+)$/.exec(path))) {
       return listBuilds(env, decodeURIComponent(m[1]));
+    }
+
+    if (method === "GET" && (m = /^\/traces\/([^/]+)$/.exec(path))) {
+      return getTrace(env, decodeURIComponent(m[1]));
     }
 
     if (method === "GET" && (m = /^\/device\/([^/]+)$/.exec(path))) {
@@ -401,6 +472,11 @@ export default {
     if (method === "PUT" && (m = /^\/bundles\/(.+)\/([^/]+)$/.exec(path))) {
       if (!authorized(request, env.STONE_PUBLISH_TOKEN)) return error(401, "unauthorized");
       return putBundle(request, env, decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+    }
+
+    if (method === "POST" && path === "/traces") {
+      if (!authorized(request, env.STONE_PUBLISH_TOKEN)) return error(401, "unauthorized");
+      return putTrace(request, env, url);
     }
 
     if (method === "PUT" && (m = /^\/device\/([^/]+)\/channel$/.exec(path))) {

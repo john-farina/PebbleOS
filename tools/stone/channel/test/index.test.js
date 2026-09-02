@@ -367,6 +367,70 @@ describe("bundles", () => {
   });
 });
 
+describe("trace captures", () => {
+  const CAPTURE = "STONE-TRACE BEGIN entries=2 dropped=0\nST 0 touch 0 12 100\nST 30 swipe 8 0 0\nSTONE-TRACE END\n";
+
+  it("requires the publish token to upload", async () => {
+    assert.equal((await call("POST", "/traces", { raw: CAPTURE })).status, 401);
+  });
+
+  it("round-trips a capture as readable text", async () => {
+    // Plain text on the way out matters: the point of a capture is that someone
+    // opens it and reads it, not that a tool parses it.
+    const post = await call("POST", "/traces", { raw: CAPTURE, token: PUBLISH });
+    assert.equal(post.status, 200);
+    const { stored } = await post.json();
+
+    const got = await call("GET", `/traces/${stored}`);
+    assert.equal(got.status, 200);
+    assert.match(got.headers.get("content-type"), /text\/plain/);
+    const text = await got.text();
+    assert.ok(text.startsWith("# stone-trace "));
+    assert.ok(text.endsWith(CAPTURE));
+  });
+
+  it("serves a capture without a token, so it can be shared with whoever is helping", async () => {
+    const { stored } = await (await call("POST", "/traces", { raw: CAPTURE, token: PUBLISH })).json();
+    assert.equal((await call("GET", `/traces/${stored}`)).status, 200);
+  });
+
+  it("refuses an empty capture", async () => {
+    assert.equal((await call("POST", "/traces", { raw: "   \n", token: PUBLISH })).status, 400);
+  });
+
+  it("lists captures newest first", async () => {
+    // Ordered by the index rather than by id: two captures uploaded in the same
+    // millisecond share a timestamp prefix, so ids alone do not order them.
+    await call("POST", "/traces?note=older", { raw: "first\n", token: PUBLISH });
+    await call("POST", "/traces?note=newer", { raw: "second\n", token: PUBLISH });
+    const { traces } = await (await call("GET", "/traces")).json();
+    assert.equal(traces[0].note, "newer");
+    assert.equal(traces[1].note, "older");
+  });
+
+  it("keeps only the recent captures, deleting what it drops", async () => {
+    // An unbounded list would make every listing a slow page nobody reads, and
+    // an entry dropped from the index with its capture left behind would leak.
+    for (let i = 0; i < 45; i++) {
+      await call("POST", `/traces?note=n${i}`, { raw: `capture ${i}\n`, token: PUBLISH });
+    }
+    const { traces } = await (await call("GET", "/traces")).json();
+    assert.equal(traces.length, 40);
+    assert.equal(traces[0].note, "n44");
+  });
+
+  it("keeps the note that says what the wearer was doing", async () => {
+    // Without it a capture is a wall of coordinates with no idea what was being attempted.
+    await call("POST", "/traces?note=swiping%20back", { raw: CAPTURE, token: PUBLISH });
+    const { traces } = await (await call("GET", "/traces")).json();
+    assert.equal(traces[0].note, "swiping back");
+  });
+
+  it("404s a capture that does not exist", async () => {
+    assert.equal((await call("GET", "/traces/nope")).status, 404);
+  });
+});
+
 describe("routing", () => {
   it("lists channels for the branch picker", async () => {
     await publish();
