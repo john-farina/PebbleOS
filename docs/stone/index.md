@@ -21,6 +21,7 @@ ci
 firmware
 features
 simulator
+tracing
 channels
 recovery
 roadmap
@@ -32,6 +33,7 @@ roadmap
 | {doc}`firmware` | What the fork changes in the firmware, and how to add more |
 | {doc}`features` | How to work on a feature here, and the notes file every branch carries |
 | {doc}`simulator` | Booting a build in QEMU before it reaches the watch |
+| {doc}`tracing` | Capturing what the watch actually saw, when only the wrist reproduces it |
 | {doc}`channels` | Installing a branch on the watch, switching back, and cleaning up |
 | {doc}`recovery` | What survives a bad build, and every way back |
 | {doc}`roadmap` | What is not built yet, and the decisions still open |
@@ -117,6 +119,12 @@ upstream area, and `ci:` for workflow changes.
 
 Run it before pushing — see {doc}`ci` for the install that actually works, and
 for the default rule that rejects the word "WIP" in a title.
+
+## When something only goes wrong on the wrist
+
+Hold **UP, SELECT and DOWN for five seconds** and the watch captures what its
+touch, gesture and picker paths just saw. That is usually the difference between
+a fixable report and a guess — see {doc}`tracing`.
 
 ## Every build says what it is
 

@@ -427,6 +427,56 @@ mapping from feel to number is what `stone_haptics.c` exists to own.
   `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
   upstream sets the default only on a *successful* launch and writing the pref directly would
   strand the wearer on a face whose fetch failed.
+- **2026-09-02 (tracing, and the real swipe fix)** — John: the picker shows a miniature for the one
+  face he has worn and icons for the rest, and swiping still feels bad. The second report was the
+  useful one, because it turned out the swipe work had never been in the path he was using.
+
+  **Watchface swipes were never going through `swipe.c`.** applib's touch service hands a
+  watchface a NULL state on purpose, so the recognizers cannot run there, and the earlier session
+  wired watchface swipes to the CST816's own gesture engine instead. That engine is a black box
+  with no thresholds we can reach. So every fix made to the recognizer -- the straightness
+  corridor, the motion-start clock, the fling rule -- improved swiping *inside apps* and did
+  nothing at all on the face, which is where John does most of his swiping. That is the whole
+  explanation for "still sucks".
+
+  Fixed by detecting swipes on the face from the raw contact points, which the kernel event loop
+  already receives, under the same rules as everywhere else
+  (`applib/ui/recognizer/stone_swipe_detect.c`). Written as a plain state machine over `(x, y, t)`
+  rather than a Recognizer, for one reason that matters more than tidiness: **it is testable
+  without a watch.** `tests/fw/ui/recognizer/test_stone_swipe_detect.c` has 16 cases, including
+  the thumb arc and the rest-then-swipe that were the actual complaints. The shape constants moved
+  from `swipe.c` to `swipe.h` so the two paths cannot drift; a watch where the same gesture needs
+  a different flick depending on what is on screen would be worse than one where it is merely hard.
+  The controller's swipe gestures are now ignored on the face. Its long press is still used --
+  holds are the one thing it is genuinely better at.
+
+  **The previews are not broken.** A face can only be photographed while it is running: one app
+  task, one framebuffer. So the cache fills as faces are *worn*, and John has worn one. Picking a
+  face from the picker and opening the picker again captures it, so it fills over a few uses.
+  Wanting all of them at once means launching every face in turn, which is a deliberate
+  "generate previews" action rather than something to do behind the wearer's back -- **not built,
+  and it should be John's call whether a few seconds of flicker is worth it.** The thumbnail path
+  is now traced (`thumb absent` / `thumb loaded` / `thumb store FAILED`), so the next report can
+  distinguish this from a real fault instead of us re-deriving it a third time.
+
+  **And the thing that should have existed first: traces.** See {doc}`../tracing`. Hold UP,
+  SELECT and DOWN for five seconds and the watch prints the last 192 events its touch, gesture,
+  swipe, picker and thumbnail paths saw. Three notes for later:
+
+  - **Not BACK in the combo.** `SELECT+BACK` held is the hardware reset back door, so a debug
+    combo including BACK would reboot the watch instead of capturing what you were trying to
+    capture.
+  - **Not `PBL_LOG`.** A log line costs a format string, a flash write and a filename, which
+    cannot go on every touch sample; and the interesting events would be drowned by the time
+    anyone looked. A fixed-size record with two integers is cheap enough to leave switched on.
+  - **The decoder names the codes, the watch does not.** A name costs flash there and nothing in
+    `tools/stone/decode_trace.py`. Add the name in the same commit as the trace point, or the next
+    person reads a bare number.
+
+  Verified: 332 firmware tests, 47 tools tests, 47 channel-server tests, and a clean `obelix@pvt`
+  build. Nothing here has been on hardware -- but for the first time the swipe rules themselves
+  have been, in the only way they can be off a wrist.
+
 - **2026-09-02 (first wrist test: two crashes)** — John held the watchface. He felt the haptic --
   **the first confirmation that any of the haptics work on hardware** -- and then the screen
   thrashed, input stopped landing, and the watch reset. No preview either.

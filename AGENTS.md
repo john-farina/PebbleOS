@@ -96,6 +96,7 @@ landing ~12 commits a day, and ignoring them is how it becomes unmaintainable.
 | `docs/stone/firmware.md` | What the fork changes in the firmware and how to add more |
 | `docs/stone/channels.md` | Installing a branch on the watch, switching back, retiring one |
 | `docs/stone/recovery.md` | Flash layout, what survives a bad build, every way back |
+| `docs/stone/tracing.md` | **Getting a bug off the wrist.** Hold the three right buttons for five seconds |
 | `docs/stone/roadmap.md` | What is not built yet and which decisions are still open |
 
 ## Building a feature
