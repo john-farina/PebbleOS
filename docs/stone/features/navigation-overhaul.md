@@ -427,6 +427,42 @@ mapping from feel to number is what `stone_haptics.c` exists to own.
   `app_manager_put_launch_app_event` rather than `watchface_set_default_install_id`, because
   upstream sets the default only on a *successful* launch and writing the pref directly would
   strand the wearer on a face whose fetch failed.
+- **2026-09-02 (first wrist test: two crashes)** — John held the watchface. He felt the haptic --
+  **the first confirmation that any of the haptics work on hardware** -- and then the screen
+  thrashed, input stopped landing, and the watch reset. No preview either.
+
+  **The hold was dispatching tens of long presses a second.** `CST816_GESTURE_ID` *holds* its
+  value rather than pulsing, and `prv_process_pending_messages()` runs on every interrupt the
+  controller raises, which is every report while a finger is down. So a single hold read back
+  `0x0C` report after report, and each one ran the whole handler: a Firm haptic (unthrottled, by
+  design -- only Light is throttled) and an app launch. The watch spent the hold thrashing launch
+  transitions until it gave up. Fixed in the driver, which is the layer that knows when a contact
+  begins and ends: a gesture is dispatched at most once per contact, the latch clears on
+  finger-up, and `GESTURE_NONE` deliberately does not clear it because the controller can report
+  it mid-hold. This was never a picker bug -- **the picker had not run yet.**
+
+  Worth carrying: this is the failure mode of *every* held gesture on this controller, not just
+  this one. Tap and double-tap hid it because they latch briefly around release; a hold cannot.
+
+  **The second one would have hung the first open even with the flood fixed.**
+  `settings_file_open()` allocates its maximum up front, the thumbnail cache's maximum is ~80KB,
+  and `stone_face_thumb_load()` is called from the picker's window load -- on the *app* task. The
+  first open on a fresh watch would have erased twenty NOR sectors before the window appeared.
+  Now opened with `settings_file_open_growable()` seeded at 4KB, so it grows as thumbnails
+  actually arrive and the slow flash work stays on the system task where the write already lives.
+
+  Two things checked and cleared while looking, so nobody re-checks them: the picker's
+  `property_animation_create()` copies its from/to values (`prv_init` dereferences them), so the
+  stack locals in `prv_step` are not aliased; and the paging animation is horizontal, so it was
+  never what "shaking up and down" was.
+
+  **The missing preview is expected on a first open and is not a third bug.** A face can only be
+  photographed while it is running, so the cache fills as faces are worn; and the capture of the
+  face you just left is handed to the system task, so it has not reached flash by the time that
+  same picker launch reads it. **The face you were wearing shows up on the *second* open.** If a
+  face still has no miniature after being worn and left twice, that is a real fault -- look at the
+  `thumb:` warnings, which now exist for exactly this.
+
 - **2026-09-01 (build identity)** — Builds now name themselves. A WIP build carries
   `navigation.7` -- the branch and how far into it the build is -- plus one sentence from
   `tools/stone/build_summary.txt` saying what changed, and the pair is rendered by a **Stone app

@@ -12,4 +12,4 @@
 # line that is neither is the summary. Keep it to one line of at most 72
 # characters -- CI rejects longer, because the watch cannot show it.
 
-Working previews and haptics, plus a Stone app that names each build.
+Holding the watchface no longer floods launches and resets the watch.
