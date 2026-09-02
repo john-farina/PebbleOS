@@ -301,6 +301,10 @@ static TouchGesture prv_swipe_gesture(uint8_t id) {
 }
 #endif
 
+//! The gesture dispatched for the contact in progress, so a held finger reports it once.
+//! Reset on finger-up, and on the recovery path where a contact is abandoned mid-gesture.
+static uint8_t s_last_gesture = CST816_GESTURE_NONE;
+
 static void prv_process_pending_messages(void* context) {
   bool rv;
   s_callback_scheduled = false;
@@ -319,6 +323,7 @@ static void prv_process_pending_messages(void* context) {
   rv = prv_read_data(CST816_GESTURE_ID, &id, 1, 1);
   if (!rv) {
     PBL_LOG_ERR("Failed to read gesture ID, trying to recover");
+    s_last_gesture = CST816_GESTURE_NONE;
     touch_handle_update(TouchState_FingerUp, 0, 0);
     exti_disable(CST816->int_exti);
     touch_sensor_set_enabled(true);
@@ -329,6 +334,7 @@ static void prv_process_pending_messages(void* context) {
   rv = prv_read_data(CST816_TOUCH_DATA_REG, data, CST816_TOUCH_DATA_SIZE, 1);
   if (!rv) {
     PBL_LOG_ERR("Failed to read touch data, trying to recover");
+    s_last_gesture = CST816_GESTURE_NONE;
     touch_handle_update(TouchState_FingerUp, 0, 0);
     exti_disable(CST816->int_exti);
     touch_sensor_set_enabled(true);
@@ -349,32 +355,50 @@ static void prv_process_pending_messages(void* context) {
     point.y = CST816->max_y - point.y;
   }
 
-  switch (id) {
-    case CST816_GESTURE_CLICK:
-      touch_handle_gesture(TouchGesture_Tap, point.x, point.y);
-      break;
-    case CST816_GESTURE_DOUBLE_CLICK:
-      touch_handle_gesture(TouchGesture_DoubleTap, point.x, point.y);
-      break;
+  // The gesture register holds its value rather than pulsing, and this function runs on every
+  // interrupt the controller raises -- which is every report while a finger is down. A long press
+  // therefore reads back 0x0C on report after report, so dispatching unconditionally turns one
+  // hold into tens of identical gestures a second. On the watchface that meant tens of app
+  // launches a second: the screen thrashed through launch transitions, input never landed, and
+  // the watch eventually reset.
+  //
+  // So a gesture is dispatched at most once per contact. The latch clears on finger-up, which is
+  // what keeps two deliberate taps two taps. GESTURE_NONE deliberately does not clear it: the
+  // controller can report it mid-hold, and treating that as "the gesture ended" would let the
+  // same hold fire again.
+  if ((id != CST816_GESTURE_NONE) && (id != s_last_gesture)) {
+    switch (id) {
+      case CST816_GESTURE_CLICK:
+        touch_handle_gesture(TouchGesture_Tap, point.x, point.y);
+        break;
+      case CST816_GESTURE_DOUBLE_CLICK:
+        touch_handle_gesture(TouchGesture_DoubleTap, point.x, point.y);
+        break;
 #ifdef CONFIG_STONE
-    case CST816_GESTURE_UP:
-    case CST816_GESTURE_DOWN:
-    case CST816_GESTURE_LEFT:
-    case CST816_GESTURE_RIGHT:
-      touch_handle_gesture(prv_swipe_gesture(id), point.x, point.y);
-      break;
-    case CST816_GESTURE_LONG_PRESS:
-      touch_handle_gesture(TouchGesture_LongPress, point.x, point.y);
-      break;
+      case CST816_GESTURE_UP:
+      case CST816_GESTURE_DOWN:
+      case CST816_GESTURE_LEFT:
+      case CST816_GESTURE_RIGHT:
+        touch_handle_gesture(prv_swipe_gesture(id), point.x, point.y);
+        break;
+      case CST816_GESTURE_LONG_PRESS:
+        touch_handle_gesture(TouchGesture_LongPress, point.x, point.y);
+        break;
 #endif
-    default:
-      break;
+      default:
+        break;
+    }
+  }
+  if (id != CST816_GESTURE_NONE) {
+    s_last_gesture = id;
   }
 
   if (press == 0x01) {
     touch_handle_update(TouchState_FingerDown, point.x, point.y);
   } else {
     touch_handle_update(TouchState_FingerUp, point.x, point.y);
+    // Contact over: the next one starts from a clean latch.
+    s_last_gesture = CST816_GESTURE_NONE;
   }
 }
 
