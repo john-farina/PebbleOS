@@ -357,6 +357,145 @@ async function retireChannel(request, env, channel, url) {
   });
 }
 
+// --- Bug reports -----------------------------------------------------------
+//
+// The app's BugApi.kt already speaks Core's eng-dash routes and already points
+// them at bugUrl, which is this server. Implementing the same four routes is
+// what makes "send logs" in the app land here instead of nowhere. No auth: the
+// app carries no token, and every route below only accepts a bounded body.
+
+function reportKey(id) {
+  return `report:${id}`;
+}
+
+// POST /bug-reports/create — the report text, before any attachments.
+async function createBugReport(request, env) {
+  let report;
+  try {
+    report = await request.json();
+  } catch {
+    return error(400, "body is not JSON");
+  }
+  const createdAt = new Date().toISOString();
+  const id = `${createdAt.replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}`;
+  await env.STONE.put(
+    reportKey(id),
+    JSON.stringify({
+      id,
+      created_at: createdAt,
+      details: report.bugReportDetails ?? "",
+      username: report.username ?? null,
+      email: report.email ?? null,
+      timezone: report.timezone ?? null,
+      summary: report.summary ?? "",
+      latest_logs: report.latestLogs ?? "",
+      files: [],
+    }),
+  );
+  return json({ success: true, bugReportId: id }, 201);
+}
+
+// POST /upload/presigned — where to PUT each attachment. Core hands out S3
+// URLs; we hand out our own, so uploadUrl and fileUrl are the same address.
+async function presignUploads(request, env, url) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return error(400, "body is not JSON");
+  }
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (files.length === 0) return error(400, "no files");
+  const uploads = files.map((file) => {
+    const safeName = String(file.fileName || "file").replace(/[^A-Za-z0-9._-]/g, "_");
+    const key = `${crypto.randomUUID()}-${safeName}`;
+    const fileUrl = `${url.origin}/upload/files/${key}`;
+    return { fileName: file.fileName, uploadUrl: fileUrl, fileUrl };
+  });
+  return json({ success: true, uploads });
+}
+
+function uploadKey(key) {
+  return `upload:${key}`;
+}
+
+// PUT /upload/files/:key — the bytes. Same cap as a bundle.
+async function putUpload(request, env, key) {
+  const body = await request.arrayBuffer();
+  if (body.byteLength === 0) return error(400, "empty body");
+  if (body.byteLength > MAX_BUNDLE_BYTES) {
+    return error(413, `file is ${body.byteLength} bytes, limit is ${MAX_BUNDLE_BYTES}`);
+  }
+  await env.STONE.put(uploadKey(key), body);
+  await env.STONE.put(
+    `${uploadKey(key)}:meta`,
+    JSON.stringify({
+      content_type: request.headers.get("content-type") || "application/octet-stream",
+      size: body.byteLength,
+    }),
+  );
+  return json({ stored: key, size: body.byteLength }, 201);
+}
+
+async function getUpload(env, key) {
+  const body = await env.STONE.get(uploadKey(key), "arrayBuffer");
+  if (!body) return error(404, "no such file");
+  const meta = (await env.STONE.get(`${uploadKey(key)}:meta`, "json")) || {};
+  return new Response(body, {
+    headers: {
+      "content-type": meta.content_type || "application/octet-stream",
+      "content-disposition": `attachment; filename="${key}"`,
+    },
+  });
+}
+
+// POST /upload/complete — attach uploaded files to a report. The app derives
+// fileKey by splitting fileUrl at Core's bucket name; without that segment it
+// sends the whole URL back, so accept a URL or a key and keep the last segment.
+async function completeUpload(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return error(400, "body is not JSON");
+  }
+  const id = body.bugReportId;
+  const report = id ? await env.STONE.get(reportKey(id), "json") : null;
+  if (!report) return error(404, "no such report");
+  const raw = Array.isArray(body.fileKeys) ? body.fileKeys : [body.fileKeys];
+  const keys = raw.filter(Boolean).map((k) => String(k).split("/").pop());
+  report.files = [...new Set([...(report.files || []), ...keys])];
+  await env.STONE.put(reportKey(id), JSON.stringify(report));
+  return json({ success: true });
+}
+
+// GET /reports — newest first. Ids start with the ISO timestamp, so the sorted
+// key order is chronological.
+async function listReports(env, url) {
+  const { keys } = await env.STONE.list({ prefix: "report:" });
+  const reports = [];
+  for (const { name } of keys.slice().reverse()) {
+    const report = await env.STONE.get(name, "json");
+    if (!report) continue;
+    reports.push({
+      id: report.id,
+      created_at: report.created_at,
+      details: report.details,
+      files: (report.files || []).map((k) => `${url.origin}/upload/files/${k}`),
+    });
+  }
+  return json({ reports });
+}
+
+async function getReport(env, url, id) {
+  const report = await env.STONE.get(reportKey(id), "json");
+  if (!report) return error(404, "no such report");
+  return json({
+    ...report,
+    files: (report.files || []).map((k) => `${url.origin}/upload/files/${k}`),
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -411,6 +550,28 @@ export default {
     if (method === "DELETE" && (m = /^\/channels\/(.+)$/.exec(path))) {
       if (!authorized(request, env.STONE_PUBLISH_TOKEN)) return error(401, "unauthorized");
       return retireChannel(request, env, decodeURIComponent(m[1]), url);
+    }
+
+    if (method === "POST" && path === "/bug-reports/create") {
+      return createBugReport(request, env);
+    }
+    if (method === "POST" && path === "/upload/presigned") {
+      return presignUploads(request, env, url);
+    }
+    if (method === "PUT" && (m = /^\/upload\/files\/([^/]+)$/.exec(path))) {
+      return putUpload(request, env, decodeURIComponent(m[1]));
+    }
+    if (method === "GET" && (m = /^\/upload\/files\/([^/]+)$/.exec(path))) {
+      return getUpload(env, decodeURIComponent(m[1]));
+    }
+    if (method === "POST" && path === "/upload/complete") {
+      return completeUpload(request, env);
+    }
+    if (method === "GET" && path === "/reports") {
+      return listReports(env, url);
+    }
+    if (method === "GET" && (m = /^\/reports\/([^/]+)$/.exec(path))) {
+      return getReport(env, url, decodeURIComponent(m[1]));
     }
 
     return error(404, `no route for ${method} ${path}`);

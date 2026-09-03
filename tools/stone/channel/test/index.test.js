@@ -387,3 +387,51 @@ describe("routing", () => {
     assert.equal((await call("GET", "/device/nobody")).status, 404);
   });
 });
+
+describe("bug reports (the eng-dash routes BugApi.kt speaks)", () => {
+  it("creates a report, presigns, stores bytes, completes with a URL or a key", async () => {
+    const created = await call("POST", "/bug-reports/create", {
+      body: { bugReportDetails: "watch rebooted", username: "john", email: "j@x", timezone: "UTC", summary: "s", latestLogs: "l" },
+    });
+    assert.equal(created.status, 201);
+    const { success, bugReportId } = await created.json();
+    assert.equal(success, true);
+    assert.ok(bugReportId);
+
+    const presigned = await call("POST", "/upload/presigned", {
+      body: { files: [{ fileName: "full logs.txt", fileType: "text/plain", fileSize: 3 }] },
+    });
+    assert.equal(presigned.status, 200);
+    const { uploads } = await presigned.json();
+    assert.equal(uploads.length, 1);
+    assert.equal(uploads[0].uploadUrl, uploads[0].fileUrl);
+    const path = new URL(uploads[0].uploadUrl).pathname;
+
+    const put = await call("PUT", path, { raw: "abc" });
+    assert.equal(put.status, 201);
+
+    // The app sends the whole fileUrl back as fileKey when Core's bucket name is absent.
+    const done = await call("POST", "/upload/complete", {
+      body: { fileKeys: uploads[0].fileUrl, bugReportId },
+    });
+    assert.equal(done.status, 200);
+
+    const report = await (await call("GET", `/reports/${bugReportId}`)).json();
+    assert.equal(report.details, "watch rebooted");
+    assert.equal(report.files.length, 1);
+    assert.equal(report.files[0], uploads[0].fileUrl);
+
+    const file = await call("GET", path);
+    assert.equal(file.status, 200);
+    assert.equal(await file.text(), "abc");
+
+    const list = await (await call("GET", "/reports")).json();
+    assert.equal(list.reports[0].id, bugReportId);
+  });
+
+  it("refuses completion against an unknown report and empty uploads", async () => {
+    assert.equal((await call("POST", "/upload/complete", { body: { fileKeys: "k", bugReportId: "nope" } })).status, 404);
+    assert.equal((await call("PUT", "/upload/files/k", { raw: "" })).status, 400);
+    assert.equal((await call("POST", "/upload/presigned", { body: { files: [] } })).status, 400);
+  });
+});
